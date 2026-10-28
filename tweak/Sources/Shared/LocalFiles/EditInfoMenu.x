@@ -436,7 +436,7 @@ static NSString *trimmed(NSString *text) {
     [self.view endEditing:YES];
     _pickingMotion = YES;
     UIDocumentPickerViewController *documents = [[UIDocumentPickerViewController alloc]
-        initForOpeningContentTypes:@[UTType.movie, UTType.gif] asCopy:YES];
+        initForOpeningContentTypes:@[[UTType typeWithIdentifier:@"public.movie"], UTType.gif] asCopy:YES];
     documents.delegate = self;
     [self presentViewController:documents animated:YES completion:nil];
 }
@@ -446,7 +446,7 @@ static NSString *trimmed(NSString *text) {
     _pickingMotion = YES;
     UIImagePickerController *photos = [UIImagePickerController new];
     photos.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
-    photos.mediaTypes = @[UTType.movie.identifier];
+    photos.mediaTypes = @[@"public.movie"];
     photos.videoQuality = UIImagePickerControllerQualityTypeHigh;
     photos.delegate = self;
     [self presentViewController:photos animated:YES completion:nil];
