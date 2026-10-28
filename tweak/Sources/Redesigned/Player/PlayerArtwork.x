@@ -32,6 +32,8 @@ static NSHashTable<UIView *> *sg_tilts;
 // size, leaving bounds that no longer match the tilt view's, so the cover is not looked for by size again.
 static NSMapTable<UIView *, UIView *> *sg_covers;
 
+static void enforceCustomCoverInTilt(UIView *tilt);
+
 static CGFloat currentScale(void) {
     SPTPlayerState *state = SGPlayerState();
     if (!state.isPaused) return 1;
