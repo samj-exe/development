@@ -370,6 +370,7 @@ static UIViewPropertyAnimator *setBlurIntensity(UIVisualEffectView *view, UIView
 
 // The lyrics' blur, and their share of the dim, which a layer's own animation carries over the same fade.
 - (void)setBlurred:(BOOL)blurred animated:(BOOL)animated {
+    if (_lyricsUp == blurred) return;
     _lyricsUp = blurred;
     void (^apply)(void) = ^{
         self->_lyricsBlurAnimator = setBlurIntensity(self->_lyricsBlur, self->_lyricsBlurAnimator,
@@ -643,17 +644,8 @@ static void refreshLyricsBlurForTrack(NSString *track) {
     [sg_motion setBlurred:blurred animated:NO];
     SGRArtworkField *field = SGRPlayerField();
     [field setLyricsBlurred:blurred animated:NO];
-    // A pause, skip, or Spotify layout pass can replace or restate the two visual layers later.
-    // Reassert the requested state repeatedly so it remains active until the player settles.
-    for (NSNumber *delay in @[@0.15, @0.4, @0.9, @1.8, @3.5]) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            if ([track isEqualToString:sg_track] && [track isEqualToString:currentLyricsBlurTrack()]) {
-                BOOL repeated = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
-                [sg_motion setBlurred:repeated animated:NO];
-                [SGRPlayerField() setLyricsBlurred:repeated animated:NO];
-            }
-        });
-    }
+    // Apply once here; recreating the effect and re-running a fractional animator on layout/timer
+    // callbacks caused the visible flicker. Layout methods now preserve the current requested state.
 }
 
 BOOL SGRPlayerMotionLyricsBlurEnabled(void) {

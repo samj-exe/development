@@ -16,6 +16,7 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
 #import "Shared/Haptics/Haptics.h"
+#import "Shared/LocalFiles/LocalFiles.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "Player.h"
 #import <objc/runtime.h>
@@ -25,7 +26,7 @@ static const CGFloat kPausedScale = 0.84;
 // the cover is the player's too; a smaller one is another preview, not ours.
 static const CGFloat kCoverMinWidth = 200;
 
-static char kPlateKey;
+static char kPlateKey, kCustomCoverOfficialImageKey;
 static NSHashTable<UIView *> *sg_tilts;
 // The cover of each tilt view once found. A frame Spotify sets on a scaled view becomes its scaled
 // size, leaving bounds that no longer match the tilt view's, so the cover is not looked for by size again.
@@ -256,6 +257,7 @@ static void watchHold(UIView *tilt) {
     UIView *cover = coverIn(tilt);
     if (!cover) return;
     [sg_tilts addObject:tilt];
+    enforceCustomCoverInTilt(tilt);
     watchHold(tilt);
     SGRPlayerMotionCoverLaidOut();
     // The cover fills the tilt view (01.txt:37); bounds and center, unlike a frame, hold under the scale.
@@ -320,6 +322,60 @@ static UIView *coverOfImage(UIView *image) {
     UIView *box = image.superview;
     return box && coverIn(box.superview) == box ? box : nil;
 }
+
+static UIImage *currentCustomCover(void) {
+    SPTPlayerTrack *track = SGPlayerState().track;
+    NSString *uri = SGURIString(track.URI);
+    if (!uri.length) return nil;
+    NSDictionary *metadata = [track respondsToSelector:@selector(metadata)] ? track.metadata : nil;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSDictionary *edit = SGTrackEditFor(uri, albumURI);
+    NSString *path = SGTrackArtworkCoverPath(edit);
+    return path.length ? [UIImage imageWithContentsOfFile:path] : nil;
+}
+
+static BOOL playerCoverImage(UIView *view) {
+    UIView *root = view;
+    for (UIView *ancestor = view.superview; ancestor; ancestor = ancestor.superview) {
+        if ([ancestor isKindOfClass:NSClassFromString(@"_TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView")]) {
+            root = ancestor;
+            break;
+        }
+    }
+    return root != view && inCoverCell(root);
+}
+
+static void enforceCustomCoverInTilt(UIView *tilt) {
+    UIImage *custom = currentCustomCover();
+    if (!custom || !inCoverCell(tilt)) return;
+    SGForEachView(tilt, ^(UIView *view) {
+        if ([view isKindOfClass:UIImageView.class]) {
+            UIImageView *image = (UIImageView *)view;
+            if (image.image != custom) image.image = custom;
+        }
+    });
+}
+
+%hook UIImageView
+- (void)setImage:(UIImage *)image {
+    UIImageView *view = (UIImageView *)self;
+    UIImage *custom = playerCoverImage(view) ? currentCustomCover() : nil;
+    if (!custom && image) objc_setAssociatedObject(view, &kCustomCoverOfficialImageKey, image, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    %orig(custom ?: image);
+}
+
+- (void)layoutSubviews {
+    %orig;
+    UIImageView *view = (UIImageView *)self;
+    UIImage *custom = playerCoverImage(view) ? currentCustomCover() : nil;
+    if (custom) {
+        if (view.image != custom) view.image = custom;
+    } else {
+        UIImage *official = objc_getAssociatedObject(view, &kCustomCoverOfficialImageKey);
+        if (official && view.image != official) view.image = official;
+    }
+}
+%end
 
 %hook _TtC22NowPlaying_ElementsKitP33_1D6A1393FEB35D7207F503DA17E7748E14ImageViewProxy
 - (void)setFrame:(CGRect)frame {

@@ -116,6 +116,49 @@ static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
 }
 %end
 
+%hook MPNowPlayingInfoCenter
+- (void)setNowPlayingInfo:(NSDictionary *)info {
+    NSDictionary *source = [info isKindOfClass:NSDictionary.class] ? info : @{};
+    SPTPlayerState *state = SGPlayerState();
+    SPTPlayerTrack *track = state.track;
+    NSString *uri = SGURIString(track.URI);
+    if (!uri.length) {
+        %orig(source);
+        return;
+    }
+    NSDictionary *original = SGTrackOriginalMetadata(track);
+    NSDictionary *metadata = [original isKindOfClass:NSDictionary.class] ? original
+        : [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSDictionary *edit = SGTrackEditFor(uri, albumURI);
+    if (!edit.count) {
+        %orig(source);
+        return;
+    }
+
+    NSMutableDictionary *shown = [source mutableCopy];
+    NSString *title = [edit[@"title"] isKindOfClass:NSString.class] && [edit[@"title"] length]
+        ? edit[@"title"] : ([metadata[@"title"] isKindOfClass:NSString.class] ? metadata[@"title"] : nil);
+    NSString *artist = [edit[@"artist"] isKindOfClass:NSString.class] && [edit[@"artist"] length]
+        ? edit[@"artist"] : ([metadata[@"artist_name"] isKindOfClass:NSString.class] ? metadata[@"artist_name"] : nil);
+    NSString *album = [edit[@"album"] isKindOfClass:NSString.class] && [edit[@"album"] length]
+        ? edit[@"album"] : ([metadata[@"album_title"] isKindOfClass:NSString.class] ? metadata[@"album_title"] : nil);
+    if (title.length) shown[MPMediaItemPropertyTitle] = title;
+    if (artist.length) shown[MPMediaItemPropertyArtist] = artist;
+    if (album.length) shown[MPMediaItemPropertyAlbumTitle] = album;
+
+    NSString *coverPath = SGTrackArtworkCoverPath(edit);
+    UIImage *cover = coverPath ? [UIImage imageWithContentsOfFile:coverPath] : nil;
+    if (cover) {
+        MPMediaItemArtwork *artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:cover.size requestHandler:^UIImage *(CGSize size) {
+            return cover;
+        }];
+        shown[MPMediaItemPropertyArtwork] = artwork;
+    }
+    %orig(shown);
+}
+%end
+
 %hook SPTLocalAVAssetImageLoaderRequest
 - (void)loadLocalFileImage {
     NSString *path = SGLocalFileCoverInURL(self.URL.absoluteString);

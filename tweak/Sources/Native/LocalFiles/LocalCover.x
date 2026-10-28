@@ -13,7 +13,7 @@
 #import "Shared/Player/PlayerState.h"
 
 static const CGFloat kCoverMinWidth = 200;
-static char kImageKey, kTrackKey;
+static char kImageKey, kTrackKey, kOfficialImageKey;
 static __weak UIScrollView *sg_list;
 
 static BOOL isCoverCell(UIView *view) {
@@ -39,13 +39,16 @@ static UIImageView *largestImageIn(UIView *root) {
 
 static void fill(UIImageView *view) {
     if (!view) return;
-    BOOL ours = view.image && view.image == objc_getAssociatedObject(view, &kImageKey);
-    if (view.image && !ours) return;
     SPTPlayerTrack *track = SGPlayerState().track;
     NSString *uri = SGURIString(track.URI);
-    if (ours && [uri isEqualToString:objc_getAssociatedObject(view, &kTrackKey)]) return;
-    UIImage *cover = SGLocalFileFallbackCover(track);
-    if (!cover && !ours) return;
+    NSDictionary *metadata = [track respondsToSelector:@selector(metadata)] ? track.metadata : nil;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSString *coverPath = SGTrackArtworkCoverPath(SGTrackEditFor(uri, albumURI));
+    UIImage *cover = coverPath ? [UIImage imageWithContentsOfFile:coverPath] : SGLocalFileFallbackCover(track);
+    if (!cover) return;
+    UIImage *ours = objc_getAssociatedObject(view, &kImageKey);
+    NSString *ourTrack = objc_getAssociatedObject(view, &kTrackKey);
+    if (view.image == ours && [uri isEqualToString:ourTrack] && cover == ours) return;
     view.image = cover;
     objc_setAssociatedObject(view, &kImageKey, cover, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(view, &kTrackKey, uri, OBJC_ASSOCIATION_COPY_NONATOMIC);
@@ -59,6 +62,44 @@ static void fillFront(UIScrollView *list) {
         fill(largestImageIn(cell));
     }
 }
+
+static UIImage *nativeCurrentCustomCover(void) {
+    SPTPlayerTrack *track = SGPlayerState().track;
+    NSString *uri = SGURIString(track.URI);
+    if (!uri.length) return nil;
+    NSDictionary *metadata = [track respondsToSelector:@selector(metadata)] ? track.metadata : nil;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSString *path = SGTrackArtworkCoverPath(SGTrackEditFor(uri, albumURI));
+    return path.length ? [UIImage imageWithContentsOfFile:path] : nil;
+}
+
+static BOOL nativePlayerCoverImage(UIImageView *view) {
+    for (UIView *ancestor = view.superview; ancestor; ancestor = ancestor.superview) {
+        if (isCoverCell(ancestor)) return YES;
+    }
+    return NO;
+}
+
+%hook UIImageView
+- (void)setImage:(UIImage *)image {
+    UIImageView *view = (UIImageView *)self;
+    UIImage *custom = nativePlayerCoverImage(view) ? nativeCurrentCustomCover() : nil;
+    if (!custom && image) objc_setAssociatedObject(view, &kOfficialImageKey, image, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    %orig(custom ?: image);
+}
+
+- (void)layoutSubviews {
+    %orig;
+    UIImageView *view = (UIImageView *)self;
+    UIImage *custom = nativePlayerCoverImage(view) ? nativeCurrentCustomCover() : nil;
+    if (custom) {
+        if (view.image != custom) view.image = custom;
+    } else {
+        UIImage *official = objc_getAssociatedObject(view, &kOfficialImageKey);
+        if (official && view.image != official) view.image = official;
+    }
+}
+%end
 
 // The track changing, or the now playing info catching up with it a moment later, lays nothing out.
 @interface SGLocalCoverWatcher : NSObject <SGPlayerStateObserver>
