@@ -1,5 +1,20 @@
 #import "Core/SGCore.h"
+#import "Shared/LocalFiles/LocalFiles.h"
+#import "Shared/Player/PlayerState.h"
 #import "NowPlaying.h"
+
+static __weak UIViewController *sg_infoUnit;
+
+static void refreshTrackLabels(UIView *root) {
+    SPTPlayerTrack *track = SGPlayerState().track;
+    if (!root || !track) return;
+    SGForEachView(root, ^(UIView *view) {
+        if (![view isKindOfClass:UILabel.class]) return;
+        UILabel *label = (UILabel *)view;
+        if ([label.accessibilityIdentifier isEqualToString:@"now-playing-title-label"]) label.text = track.trackTitle;
+        else if ([label.accessibilityIdentifier isEqualToString:@"now-playing-subtitle-label"]) label.text = track.artistName;
+    });
+}
 
 #pragma mark - cards and sections
 
@@ -99,6 +114,8 @@ static void finish(UIViewController *unit, BOOL changed) {
 %hook _TtC20NowPlaying_ModesImpl23InformationElementsUnit
 - (void)viewDidLayoutSubviews {
     %orig;
+    sg_infoUnit = (UIViewController *)self;
+    refreshTrackLabels(sg_infoUnit.viewIfLoaded);
     if (!SGHidden(SGHideAddTo)) return;
     BOOL changed = NO;
     for (UIView *item in SGRowIn(((UIViewController *)self).viewIfLoaded).arrangedSubviews) {
@@ -128,6 +145,16 @@ void SGSetPlayerLyricsOnly(BOOL on) {
 %ctor {
     if (!SGNativeUI()) return;
     %init;
+    [NSNotificationCenter.defaultCenter addObserverForName:SGLocalFileEditsDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+        SPTPlayerState *state = SGPlayerState();
+        NSString *uri = SGURIString(state.track.URI);
+        id albumValue = state.track.metadata[@"album_uri"];
+        NSString *albumURI = [albumValue isKindOfClass:NSString.class] ? albumValue : nil;
+        NSString *editedURI = [note.object isKindOfClass:NSString.class] ? note.object : nil;
+        NSString *editedAlbumURI = [note.userInfo[@"albumURI"] isKindOfClass:NSString.class] ? note.userInfo[@"albumURI"] : nil;
+        if (![editedURI isEqualToString:uri] && ![editedAlbumURI isEqualToString:albumURI]) return;
+        refreshTrackLabels(sg_infoUnit.viewIfLoaded);
+    }];
     SGRequireClasses(@[
         @"_TtC12Element_List18CollectionViewCell",
         @"_TtC20NowPlaying_ModesImpl28PlaybackControlsElementsUnit",

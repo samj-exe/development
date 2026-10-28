@@ -100,6 +100,20 @@ static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
     NSString *uri = SGURIString(self.URI);
     return withEdit(metadata, uri);
 }
+- (NSString *)trackTitle {
+    NSString *original = %orig;
+    NSDictionary *metadata = self.metadata;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSString *edited = SGTrackEditFor(SGURIString(self.URI), albumURI)[@"title"];
+    return edited.length ? edited : original;
+}
+- (NSString *)artistName {
+    NSString *original = %orig;
+    NSDictionary *metadata = self.metadata;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSString *edited = SGTrackEditFor(SGURIString(self.URI), albumURI)[@"artist"];
+    return edited.length ? edited : original;
+}
 %end
 
 %hook SPTLocalAVAssetImageLoaderRequest

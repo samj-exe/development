@@ -241,7 +241,10 @@ static const CGFloat kLyricsBlur = 0.3;
 }
 
 - (void)setLyricsBlurred:(BOOL)blurred animated:(BOOL)animated {
-    if (_lyricsBlurred == blurred) return;
+    if (_lyricsBlurred == blurred) {
+        [self applyLyricsBlurAnimated:animated];
+        return;
+    }
     _lyricsBlurred = blurred;
     [self applyLyricsBlurAnimated:animated];
 }

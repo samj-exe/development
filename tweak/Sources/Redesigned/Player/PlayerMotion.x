@@ -635,6 +635,14 @@ static NSString *currentLyricsBlurTrack(void) {
     return SGURIString(SGPlayerState().track.URI) ?: sg_track;
 }
 
+static void refreshLyricsBlurForTrack(NSString *track) {
+    if (![track isEqualToString:sg_track] || ![track isEqualToString:currentLyricsBlurTrack()]) return;
+    BOOL blurred = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
+    [sg_motion setBlurred:blurred animated:NO];
+    SGRArtworkField *field = SGRPlayerField();
+    [field setLyricsBlurred:blurred animated:NO];
+}
+
 BOOL SGRPlayerMotionLyricsBlurEnabled(void) {
     return lyricsBlurEnabledForTrack(currentLyricsBlurTrack());
 }
@@ -734,6 +742,11 @@ static BOOL beginTrack(NSString *track) {
     sg_begun++;
     BOOL blurLyrics = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
     [sg_motion setBlurred:blurLyrics animated:sg_motion.window != nil];
+    for (NSNumber *delay in @[@0.1, @0.35, @0.8]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            refreshLyricsBlurForTrack(track);
+        });
+    }
     // Read on every track, since the ⋯ menu switches it.
     BOOL wanted = SGRPlayerBackground() == SGRPlayerBackgroundAnimated && !videoShowing() && motionAllowed();
     if (wanted && [track isEqualToString:sg_shown]) return YES;
