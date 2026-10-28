@@ -174,8 +174,8 @@ NSDictionary<NSString *, id> *SGTrackEditFor(NSString *uri, NSString *albumURI) 
     NSDictionary *track = trackKey ? stored[trackKey] : nil;
     if ([album isKindOfClass:NSDictionary.class]) [result addEntriesFromDictionary:album];
     if ([track isKindOfClass:NSDictionary.class]) [result addEntriesFromDictionary:track];
-    NSDictionary *local = SGLocalFileEditFor(uri);
-    if ([local isKindOfClass:NSDictionary.class]) [result addEntriesFromDictionary:local];
+    NSDictionary *localEdit = SGLocalFileEditFor(uri);
+    if ([localEdit isKindOfClass:NSDictionary.class]) [result addEntriesFromDictionary:localEdit];
     return result.count ? result : nil;
 }
 
