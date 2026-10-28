@@ -11,6 +11,7 @@
 // Cells are reused across shelves, so each measuring sets or clears the mark on the layout it holds.
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
+#import "Settings/SGPageStyle.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Kit/SGRBridges.h"
 #import "Home.h"
