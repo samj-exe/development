@@ -46,6 +46,10 @@
 NSNotificationName const SGRPlayerBlurOpacityDidChangeNotification = @"spotifyglass.redesign.player.blurOpacityDidChange";
 static NSString *const kLyricsBlurByTrackKey = @"spotifyglass.redesign.player.lyricsBlurByTrack";
 
+static BOOL lyricsBlurEnabledForTrack(NSString *track);
+static NSString *currentLyricsBlurTrack(void);
+static void refreshLyricsBlurForTrack(NSString *track);
+
 // Where the clip starts dissolving into its foot, as a share of its height.
 static const CGFloat kFootFrom = 0.9;
 // The share of the poster's height, at its bottom, drawn on down as the foot (one pixel row at least).
@@ -130,10 +134,6 @@ static CGFloat brightEnd(NSData *luminances) {
 - (void)appear:(BOOL)animated then:(void (^)(void))done;
 - (void)setBlurred:(BOOL)blurred animated:(BOOL)animated;
 @end
-
-static BOOL lyricsBlurEnabledForTrack(NSString *track);
-static NSString *currentLyricsBlurTrack(void);
-static void refreshLyricsBlurForTrack(NSString *track);
 
 @implementation SGRPlayerMotionView {
     AVQueuePlayer *_player;
