@@ -436,7 +436,8 @@ static NSString *trimmed(NSString *text) {
     [self.view endEditing:YES];
     _pickingMotion = YES;
     UIDocumentPickerViewController *documents = [[UIDocumentPickerViewController alloc]
-        initForOpeningContentTypes:@[[UTType typeWithIdentifier:@"public.movie"], UTType.gif] asCopy:YES];
+        initForOpeningContentTypes:@[[UTType typeWithIdentifier:@"public.movie"],
+                                     [UTType typeWithIdentifier:@"com.compuserve.gif"]] asCopy:YES];
     documents.delegate = self;
     [self presentViewController:documents animated:YES completion:nil];
 }
