@@ -33,6 +33,7 @@
 #import "Shared/Sing/SGSingController.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LocalFiles/LocalFiles.h"
+#import "Shared/Player/PlayerState.h"
 #import "Player.h"
 
 static const CGFloat kThumbSide = 72;          // the cover once the lyrics are up
@@ -826,6 +827,8 @@ static void replace(void) {
 // The lines go once the grace is over and nothing is looking for the track's own any more.
 - (void)closeIfNone {
     if (!_graceOver || !sg_open || SGRPlayerLyricsAvailable() || SGKaraokeLooking(SGKaraokePlayingTrack())) return;
+    NSString *playingTrack = SGURIString(SGPlayerState().track.URI);
+    if (!playingTrack || ![playingTrack isEqualToString:_track]) return;
     SGLog(@"redesign player: no lyrics for the track that came on, the cover is back");
     setOpen(NO, YES);
 }
