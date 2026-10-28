@@ -3,9 +3,8 @@
 //
 // The menu is Spotify's context menu sheet, ContextMenu_InternalImpl.ContextMenuViewController, whose
 // rows come from Swift item factories with no way in (Shared/Player/SpeedPitchMenu.x says more). So the
-// row is the table's footer, as Speed and pitch is its header, and the sheet is the player's by
-// Speed and pitch's own test. Speed and pitch takes the footer when Spotify has a header of its own in
-// the table, so then the footer is left to it and Edit info is left out.
+// row uses a free table header or footer. In the player's menu, it joins Speed and pitch as an accessory
+// so both remain available when Spotify uses the header.
 //
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <objc/message.h>
@@ -19,7 +18,7 @@
 // The sheet's own measures, as Speed and pitch has them.
 static const CGFloat kRowHeight = 56, kSideMargin = 16, kIconSide = 24;
 
-static char kRowKey, kDecidedKey, kTrackProbeKey, kTrackProbeCountKey;
+static char kRowKey, kDecidedKey, kTrackProbeKey, kTrackProbeCountKey, kRowIsAccessoryKey, kRowIsHeaderKey;
 
 static UIFont *rowFont(void) {
     UIContentSizeCategory current = UIApplication.sharedApplication.preferredContentSizeCategory;
@@ -783,31 +782,51 @@ static void install(UIViewController *menu) {
         NSString *uri = track[@"uri"];
         NSString *albumURI = track[@"albumURI"] == NSNull.null ? nil : track[@"albumURI"];
         NSDictionary *metadata = track[@"metadata"] == NSNull.null ? nil : track[@"metadata"];
-        // A header of Spotify's own sends Speed and pitch to the footer.
+        BOOL playerMenu = SGSpeedPitchMenuIsPlayer(menu);
         UIView *header = table.tableHeaderView;
-        BOOL headerOurs = freeSlot(header) || [NSStringFromClass(header.class) hasPrefix:@"SG"];
-        if (!headerOurs || !freeSlot(table.tableFooterView)) {
-            SGLog(@"local files: the menu's table has %@ and %@, Edit info left out",
+        BOOL footerFree = freeSlot(table.tableFooterView);
+        BOOL headerFree = freeSlot(header);
+        if (!playerMenu && !footerFree && !headerFree) {
+            SGLog(@"track info: the menu's table has %@ and %@, Edit info left out",
                   header ? NSStringFromClass(header.class) : @"no header", table.tableFooterView ? NSStringFromClass(table.tableFooterView.class) : @"no footer");
             decide(menu, NO);
             return;
         }
-        decide(menu, YES);
         row = [[SGEditInfoRow alloc] initWithFrame:CGRectMake(0, 0, width, kRowHeight)];
         row.uri = uri;
         row.albumURI = albumURI;
         row.metadata = metadata;
         row.menu = menu;
+        if (playerMenu) {
+            if (!SGSpeedPitchMenuSetAccessory(menu, row)) {
+                SGLog(@"track info: no free slot for Edit info in player's menu");
+                decide(menu, NO);
+                return;
+            }
+            objc_setAssociatedObject(menu, &kRowIsAccessoryKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        } else if (footerFree) {
+            table.tableFooterView = row;
+        } else {
+            objc_setAssociatedObject(menu, &kRowIsHeaderKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            table.tableHeaderView = row;
+        }
         objc_setAssociatedObject(menu, &kRowKey, row, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        table.tableFooterView = row;
+        decide(menu, YES);
         [table invalidateIntrinsicContentSize];
         SGLog(@"track info: Edit info offered for %@", uri);
         return;
     }
+    if ([objc_getAssociatedObject(menu, &kRowIsAccessoryKey) boolValue]) {
+        SGSpeedPitchMenuSetAccessory(menu, row);
+        return;
+    }
     // Spotify replaced the footer, or the table changed width: put it back at the table's width.
-    if (table.tableFooterView != row || fabs(row.frame.size.width - width) > 0.5) {
+    BOOL inHeader = [objc_getAssociatedObject(menu, &kRowIsHeaderKey) boolValue];
+    UIView *placed = inHeader ? table.tableHeaderView : table.tableFooterView;
+    if (placed != row || fabs(row.frame.size.width - width) > 0.5) {
         row.frame = CGRectMake(0, row.frame.origin.y, width, kRowHeight);
-        table.tableFooterView = row;
+        if (inHeader) table.tableHeaderView = row;
+        else table.tableFooterView = row;
         [table invalidateIntrinsicContentSize];
     }
 }

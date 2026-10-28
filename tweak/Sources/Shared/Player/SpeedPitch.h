@@ -1,6 +1,8 @@
 #import <UIKit/UIKit.h>
 
 void SGPlayerMenuWatchMoreButton(UIView *button);
+BOOL SGSpeedPitchMenuIsPlayer(UIViewController *menu);
+BOOL SGSpeedPitchMenuSetAccessory(UIViewController *menu, UIView *accessory);
 UIView *SGSpeedPitchPanelMake(void);
 CGFloat SGSpeedPitchPanelHeight(void);
 // What the row says beside its name, the changed speed, pitch and reverb amount, nil while all are normal.

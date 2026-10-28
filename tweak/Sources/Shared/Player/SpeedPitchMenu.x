@@ -55,7 +55,7 @@ static const NSTimeInterval kSpeedInterval = 0.05;
 
 static NSTimeInterval sg_moreTappedAt;
 static BOOL sg_open;
-static char kBlockKey, kDecidedKey, kWatchedKey, kShownAtKey, kRowsInKey;
+static char kBlockKey, kDecidedKey, kWatchedKey, kShownAtKey, kRowsInKey, kAccessoryKey;
 
 #pragma mark - the block
 
@@ -66,6 +66,9 @@ NSNotificationName const SGSpeedPitchChangedNotification = @"SGSpeedPitchChanged
 @property (nonatomic) BOOL inFooter;
 // The sliders alone: no row, the panel at the top and always open.
 @property (nonatomic) BOOL panelOnly;
+- (CGFloat)desiredHeight;
+- (UIView *)accessoryView;
+- (void)setAccessoryView:(UIView *)accessoryView;
 @end
 
 @implementation SGSpeedPitchView {
@@ -77,6 +80,7 @@ NSNotificationName const SGSpeedPitchChangedNotification = @"SGSpeedPitchChanged
     UIButton *_speedValue, *_pitchValue, *_reverbValue;
     UISlider *_speed, *_pitch, *_reverb;
     UISwitch *_follow;
+    UIView *_accessoryView;
     float _shownSpeed, _shownPitch, _shownReverb;
     NSTimeInterval _speedSentAt;
     BOOL _speedPending;
@@ -223,6 +227,29 @@ static CGFloat panelHeight(void) {
     return kRowHeight + (open ? panelHeight() : 0);
 }
 
+- (CGFloat)desiredHeight {
+    return [SGSpeedPitchView heightOpen:sg_open] + (self.accessoryView ? kRowHeight : 0);
+}
+
+- (UIView *)accessoryView {
+    return _accessoryView;
+}
+
+- (void)setAccessoryView:(UIView *)accessoryView {
+    if (_accessoryView == accessoryView) return;
+    [_accessoryView removeFromSuperview];
+    _accessoryView = accessoryView;
+    if (accessoryView) [self addSubview:accessoryView];
+    CGRect frame = self.frame;
+    frame.size.height = [self desiredHeight];
+    self.frame = frame;
+    [self setNeedsLayout];
+    if (!self.table || self.panelOnly) return;
+    if (self.inFooter) self.table.tableFooterView = self;
+    else self.table.tableHeaderView = self;
+    [self.table invalidateIntrinsicContentSize];
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGFloat width = self.bounds.size.width, side = kSideMargin;
@@ -254,6 +281,11 @@ static CGFloat panelHeight(void) {
         [line[2] layoutIfNeeded];
         placeTick((UISlider *)line[2]);
         y += kSliderBlockHeight;
+    }
+    if (self.accessoryView) {
+        self.accessoryView.frame = CGRectMake(0, self.bounds.size.height - kRowHeight, width, kRowHeight);
+        [self.accessoryView setNeedsLayout];
+        [self.accessoryView layoutIfNeeded];
     }
 }
 
@@ -361,7 +393,7 @@ static NSString *summaryText(float speed, BOOL speedShown, float pitch, BOOL fol
 - (void)resize {
     UITableView *table = self.table;
     CGRect frame = self.frame;
-    frame.size.height = [SGSpeedPitchView heightOpen:sg_open];
+    frame.size.height = [self desiredHeight];
     BOOL inTable = table && !self.panelOnly;
     animateOpen(^{
         if (inTable) {
@@ -566,6 +598,25 @@ static BOOL isPlayerMenu(UIViewController *menu) {
     return ours;
 }
 
+BOOL SGSpeedPitchMenuIsPlayer(UIViewController *menu) {
+    return menu && isPlayerMenu(menu);
+}
+
+BOOL SGSpeedPitchMenuSetAccessory(UIViewController *menu, UIView *accessory) {
+    if (!menu || !accessory) return NO;
+    SGSpeedPitchView *block = objc_getAssociatedObject(menu, &kBlockKey);
+    if (!block) {
+        UITableView *table = findTable(menu.viewIfLoaded, 0);
+        if (!table) return NO;
+        BOOL headerFree = !table.tableHeaderView || table.tableHeaderView.bounds.size.height < 1;
+        BOOL footerFree = !table.tableFooterView || table.tableFooterView.bounds.size.height < 1;
+        if (!headerFree && !footerFree) return NO;
+    }
+    objc_setAssociatedObject(menu, &kAccessoryKey, accessory, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [block setAccessoryView:accessory];
+    return YES;
+}
+
 #pragma mark - Spotify's rows
 
 static NSInteger rowCount(UITableView *table) {
@@ -646,8 +697,9 @@ static void install(UIViewController *menu) {
             return;
         }
         block = [[SGSpeedPitchView alloc] initWithFrame:CGRectMake(0, 0, width, [SGSpeedPitchView heightOpen:sg_open])];
-        block.table = table;
         block.inFooter = !headerFree;
+        [block setAccessoryView:objc_getAssociatedObject(menu, &kAccessoryKey)];
+        block.table = table;
         objc_setAssociatedObject(menu, &kBlockKey, block, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         if (block.inFooter) table.tableFooterView = block;
         else table.tableHeaderView = block;
