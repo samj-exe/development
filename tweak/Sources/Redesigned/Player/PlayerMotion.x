@@ -133,6 +133,7 @@ static CGFloat brightEnd(NSData *luminances) {
 
 static BOOL lyricsBlurEnabledForTrack(NSString *track);
 static NSString *currentLyricsBlurTrack(void);
+static void refreshLyricsBlurForTrack(NSString *track);
 
 @implementation SGRPlayerMotionView {
     AVQueuePlayer *_player;
