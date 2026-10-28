@@ -243,6 +243,7 @@ static UIViewPropertyAnimator *setBlurIntensity(UIVisualEffectView *view, UIView
     BOOL blurred = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
     [self setBlurred:blurred animated:self.window != nil];
     [SGRPlayerField() setLyricsBlurred:blurred animated:self.window != nil];
+    if (track.length) refreshLyricsBlurForTrack(track);
     [self updateMotion];
 }
 
@@ -641,6 +642,17 @@ static void refreshLyricsBlurForTrack(NSString *track) {
     [sg_motion setBlurred:blurred animated:NO];
     SGRArtworkField *field = SGRPlayerField();
     [field setLyricsBlurred:blurred animated:NO];
+    // A pause, skip, or Spotify layout pass can replace or restate the two visual layers later.
+    // Reassert the requested state repeatedly so it remains active until the player settles.
+    for (NSNumber *delay in @[@0.15, @0.4, @0.9, @1.8, @3.5]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if ([track isEqualToString:sg_track] && [track isEqualToString:currentLyricsBlurTrack()]) {
+                BOOL repeated = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
+                [sg_motion setBlurred:repeated animated:NO];
+                [SGRPlayerField() setLyricsBlurred:repeated animated:NO];
+            }
+        });
+    }
 }
 
 BOOL SGRPlayerMotionLyricsBlurEnabled(void) {
@@ -742,11 +754,7 @@ static BOOL beginTrack(NSString *track) {
     sg_begun++;
     BOOL blurLyrics = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
     [sg_motion setBlurred:blurLyrics animated:sg_motion.window != nil];
-    for (NSNumber *delay in @[@0.1, @0.35, @0.8]) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            refreshLyricsBlurForTrack(track);
-        });
-    }
+    refreshLyricsBlurForTrack(track);
     // Read on every track, since the ⋯ menu switches it.
     BOOL wanted = SGRPlayerBackground() == SGRPlayerBackgroundAnimated && !videoShowing() && motionAllowed();
     if (wanted && [track isEqualToString:sg_shown]) return YES;

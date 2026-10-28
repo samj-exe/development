@@ -195,6 +195,9 @@ static const CGFloat kLyricsBlur = 0.3;
     // The screen's part of it, so the copies turn about it and the shade ends at the screen's foot.
     _fluidLayer.visibleRect = CGRectMake(bleed.left, bleed.top, bounds.size.width, height);
     [CATransaction commit];
+    // Layout can recreate the artwork panes without changing the requested blur state. Reapply it on
+    // every pass so a pause, skip, or rebuilt player plane cannot leave Spotify's own field over it.
+    [self applyLyricsBlurAnimated:NO];
 }
 
 #pragma mark - the moving field
