@@ -143,6 +143,22 @@ static void followPlayer(void) {
     // The same track is looked at again only while its metadata has named no picture yet.
     if ([uri isEqualToString:sg_wantedURI] && ![sg_wantedKey hasPrefix:@"track:"]) return;
     sg_wantedURI = uri;
+    NSDictionary *metadata = [track respondsToSelector:@selector(metadata)] ? track.metadata : nil;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSString *coverPath = SGTrackArtworkCoverPath(SGTrackEditFor(uri, albumURI));
+    if (coverPath) {
+        UIImage *cover = [UIImage imageWithContentsOfFile:coverPath];
+        if (cover) {
+            NSString *key = [NSString stringWithFormat:@"custom:%@:%@", uri, coverPath.lastPathComponent];
+            sg_wantedKey = key;
+            [sg_fetch cancel];
+            sg_fetch = nil;
+            if ([key isEqualToString:sg_artworkKey] && sg_artworkQuality == SGRArtworkQualityExact) return;
+            publish(cover, key, SGRArtworkQualityExact);
+            return;
+        }
+        artworkLog(@"custom cover %@ could not be read; using the track's artwork", coverPath.lastPathComponent);
+    }
     NSURL *url = nil;
     // A track whose metadata names no picture is its own key: only the screens can show it then.
     NSString *key = pictureOf(track, &url) ?: [@"track:" stringByAppendingString:uri];
@@ -205,10 +221,6 @@ static void refreshEditedArtwork(NSNotification *note) {
     [sg_fetch cancel];
     sg_fetch = nil;
     followPlayer();
-
-    NSString *path = SGTrackArtworkCoverPath(SGTrackEditFor(uri, albumURI));
-    UIImage *cover = path ? [UIImage imageWithContentsOfFile:path] : nil;
-    if (cover) SGRSetNowPlayingArtwork(cover, uri, SGRArtworkQualityExact);
 }
 
 static char kBarCardKey, kBarImageKey;
