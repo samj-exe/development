@@ -5,6 +5,7 @@
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
+#import "Shared/LocalFiles/LocalFiles.h"
 #import "Player.h"
 #import "SGRPlayerMenu.h"
 
@@ -610,6 +611,31 @@ static SGRPlayerMenuItem *lyricsSourceItem(SGRPlayerMenuTakeover *takeover) {
     return item;
 }
 
+static SGRPlayerMenuItem *editInfoItem(SGRPlayerMenuTakeover *takeover) {
+    // Capture the track represented by this menu so a later track change cannot redirect the edit.
+    SPTPlayerTrack *track = SGPlayerState().track;
+    NSString *uri = SGURIString(track.URI);
+    if (![uri hasPrefix:@"spotify:track:"] && !SGLocalFileIs(uri)) return nil;
+    NSDictionary *metadata = SGTrackOriginalMetadata(track) ?: track.metadata;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    __weak SGRPlayerMenuTakeover *weak = takeover;
+    SGRPlayerMenuItem *item = [SGRPlayerMenuItem itemWithTitle:@"Edit info" image:symbol(@"pencil") action:^{
+        SGRPlayerMenuTakeover *strong = weak;
+        UIViewController *sheet = strong.sheet;
+        UIViewController *presenter = sheet.presentingViewController;
+        if (!strong || !sheet || !presenter) {
+            SGLog(@"redesign player menu: cannot open Edit info without its presenting player");
+            return;
+        }
+        closeCard(strong);
+        [sheet dismissViewControllerAnimated:NO completion:^{
+            SGTrackPresentEditor(presenter, uri, albumURI, metadata);
+        }];
+    }];
+    item.key = @"spotifyglass.editInfo";
+    return item;
+}
+
 static NSArray<SGRPlayerMenuSection *> *sectionsFor(SGRPlayerMenuTakeover *t, NSArray<SGRPlayerMenuSpotifyRow *> *rows) {
     NSMutableArray<SGRPlayerMenuItem *> *tiles = [NSMutableArray array], *main = [NSMutableArray array],
                                   *feedback = [NSMutableArray array], *more = [NSMutableArray array],
@@ -639,6 +665,8 @@ static NSArray<SGRPlayerMenuSection *> *sectionsFor(SGRPlayerMenuTakeover *t, NS
     [main addObject:backgroundStyleItem(t)];
     [main addObject:lyricsBlurItem(t)];
     [main addObject:lyricsSourceItem(t)];
+    SGRPlayerMenuItem *editInfo = editInfoItem(t);
+    if (editInfo) [main addObject:editInfo];
     if (more.count == 1) {
         [feedback addObject:more.firstObject];
     } else if (more.count) {

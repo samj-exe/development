@@ -2,9 +2,10 @@
 // artwork, stored by the mod (LocalFiles.h).
 //
 // The menu is Spotify's context menu sheet, ContextMenu_InternalImpl.ContextMenuViewController, whose
-// rows come from Swift item factories with no way in (Shared/Player/SpeedPitchMenu.x says more). So the
-// row uses a free table header or footer. In the player's menu, it joins Speed and pitch as an accessory
-// so both remain available when Spotify uses the header.
+// rows come from Swift item factories with no way in (Shared/Player/SpeedPitchMenu.x says more). In the
+// Native look, the player's current track gets the former local-file row in the footer; if Speed and
+// pitch occupies that slot, the row joins it. Other track menus use a free header or footer. The
+// Redesigned player's menu adds its own Edit info action under Lyrics Source.
 //
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <objc/message.h>
@@ -758,9 +759,20 @@ static NSDictionary *menuTrack(UIViewController *menu) {
     return @{@"uri": uri, @"albumURI": albumURI ?: NSNull.null, @"metadata": metadata ?: NSNull.null};
 }
 
+static NSDictionary *playingTrackForMenu(void) {
+    SPTPlayerTrack *track = SGPlayerState().track;
+    NSString *uri = SGURIString(track.URI);
+    if (!isTrackURI(uri)) return nil;
+    NSDictionary *metadata = SGTrackOriginalMetadata(track) ?: track.metadata;
+    id albumURI = metadata[@"album_uri"];
+    return @{@"uri": uri, @"albumURI": [albumURI isKindOfClass:NSString.class] ? albumURI : NSNull.null,
+             @"metadata": metadata ?: NSNull.null};
+}
+
 static void install(UIViewController *menu) {
     UIView *root = menu.viewIfLoaded;
     if (!root || [objc_getAssociatedObject(menu, &kDecidedKey) isEqual:@NO]) return;
+    if (SGRedesignedUI() && SGSpeedPitchMenuIsPlayer(menu)) return;
     UITableView *table = findTable(root, 0);
     CGFloat width = table.bounds.size.width;
     if (width <= 0) return;
@@ -769,7 +781,8 @@ static void install(UIViewController *menu) {
         NSNumber *lastProbe = objc_getAssociatedObject(menu, &kTrackProbeKey);
         if (lastProbe && NSDate.date.timeIntervalSince1970 - lastProbe.doubleValue < 0.25) return;
         objc_setAssociatedObject(menu, &kTrackProbeKey, @(NSDate.date.timeIntervalSince1970), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        NSDictionary *track = menuTrack(menu);
+        BOOL playerMenu = SGSpeedPitchMenuIsPlayer(menu);
+        NSDictionary *track = playerMenu ? playingTrackForMenu() : menuTrack(menu);
         if (!track) {
             NSUInteger probes = [objc_getAssociatedObject(menu, &kTrackProbeCountKey) unsignedIntegerValue] + 1;
             objc_setAssociatedObject(menu, &kTrackProbeCountKey, @(probes), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -782,10 +795,10 @@ static void install(UIViewController *menu) {
         NSString *uri = track[@"uri"];
         NSString *albumURI = track[@"albumURI"] == NSNull.null ? nil : track[@"albumURI"];
         NSDictionary *metadata = track[@"metadata"] == NSNull.null ? nil : track[@"metadata"];
-        BOOL playerMenu = SGSpeedPitchMenuIsPlayer(menu);
         UIView *header = table.tableHeaderView;
         BOOL footerFree = freeSlot(table.tableFooterView);
         BOOL headerFree = freeSlot(header);
+        BOOL headerIsOurs = headerFree || [NSStringFromClass(header.class) hasPrefix:@"SG"];
         if (!playerMenu && !footerFree && !headerFree) {
             SGLog(@"track info: the menu's table has %@ and %@, Edit info left out",
                   header ? NSStringFromClass(header.class) : @"no header", table.tableFooterView ? NSStringFromClass(table.tableFooterView.class) : @"no footer");
@@ -797,7 +810,9 @@ static void install(UIViewController *menu) {
         row.albumURI = albumURI;
         row.metadata = metadata;
         row.menu = menu;
-        if (playerMenu) {
+        if (playerMenu && footerFree && headerIsOurs) {
+            table.tableFooterView = row;
+        } else if (playerMenu) {
             if (!SGSpeedPitchMenuSetAccessory(menu, row)) {
                 SGLog(@"track info: no free slot for Edit info in player's menu");
                 decide(menu, NO);
