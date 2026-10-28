@@ -1,5 +1,5 @@
 // The Home redesign: Spotify's Home page kept, with its controllers, lists and cards, decluttered to a
-// music app on black and restyled from the Kit. No settings of its own.
+// music app on black and restyled from the Kit.
 //
 //     HomeSections.x   known video and episode sections collapse; the shortcuts grid, DJ and shelves of
 //                      cards stay, and unknown feed sections remain visible. The DJ loses its heading, and
@@ -9,7 +9,7 @@
 //     HomeCards.x      the Encore button every card is: shortcut tiles (HomeTiles.m), continuous corners on the
 //                      shelf covers, the DJ card at the card radius without its talking transcript
 //     HomeTiles.m      a shortcut tile's picture run across the tile, blurred behind its title
-//     HomeTopPicks.x   the first shelf drawn large, and the page's gradient following the album at its leading edge
+//     HomeTopPicks.x   the first shelf drawn large, and the page gradient's top-pick, custom-colour or song modes
 //     HomePerf.x       FLEX builds: the frames of each scroll of Home and the time the hooks above took
 //
 // Every hook installs only while Redesigned UI is on (SGRedesignedUI).
@@ -40,9 +40,13 @@ void SGRHomeProbeEnd(SGRHomeProbe probe, CFTimeInterval began);
 // off, the Home as it was. Read once at launch (HomeCards.x).
 #define SGRKeyHomeGlass @"spotifyglass.redesign.home.glass"
 #define SGRKeyHomeTopPicks @"spotifyglass.redesign.home.toppicks"
+#define SGRKeyHomeGradientMode @"spotifyglass.redesign.home.gradient.mode"
+#define SGRKeyHomeGradientColor @"spotifyglass.redesign.home.gradient.color"
 BOOL SGRHomeGlassStyle(void);
 SGModRow *SGRHomeStyleRow(void);
 SGModRow *SGRHomeTopPicksRow(void);
+NSArray<SGModRow *> *SGRHomeGradientRows(void);
+void SGRHomeGradientRefresh(void);
 void SGRHomeProfilePhotoPreferenceChanged(void);
 
 // Whether the view sits in the shelf HomeTopPicks.x draws large (a card of it, or its cell).

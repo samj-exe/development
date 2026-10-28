@@ -1,5 +1,5 @@
-// Edit info, in the player's ⋯ menu while a local file plays, under either look: a row that opens an
-// editor for the file's title, artist, album and cover, stored by the mod (LocalFiles.h).
+// Edit info in a song's context menu, under either look: a row that opens an editor for its names and
+// artwork, stored by the mod (LocalFiles.h).
 //
 // The menu is Spotify's context menu sheet, ContextMenu_InternalImpl.ContextMenuViewController, whose
 // rows come from Swift item factories with no way in (Shared/Player/SpeedPitchMenu.x says more). So the
@@ -7,9 +7,8 @@
 // Speed and pitch's own test. Speed and pitch takes the footer when Spotify has a header of its own in
 // the table, so then the footer is left to it and Edit info is left out.
 //
-// The menu says nothing of the track it is for, so the row is only offered on the player's own menu,
-// which is for the track playing.
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <objc/message.h>
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
@@ -20,7 +19,7 @@
 // The sheet's own measures, as Speed and pitch has them.
 static const CGFloat kRowHeight = 56, kSideMargin = 16, kIconSide = 24;
 
-static char kRowKey, kDecidedKey;
+static char kRowKey, kDecidedKey, kTrackProbeKey, kTrackProbeCountKey;
 
 static UIFont *rowFont(void) {
     UIContentSizeCategory current = UIApplication.sharedApplication.preferredContentSizeCategory;
@@ -36,6 +35,7 @@ static UIFont *rowFont(void) {
 // or removed and a restore too; a swipe down with changes asks first.
 
 typedef NS_ENUM(NSInteger, SGCoverChange) { SGCoverKept, SGCoverPicked, SGCoverRemoved };
+typedef NS_ENUM(NSInteger, SGMotionChange) { SGMotionKept, SGMotionPicked, SGMotionRemoved };
 
 static NSArray<NSString *> *fieldKeys(void) {
     return @[@"title", @"artist", @"album"];
@@ -49,33 +49,57 @@ static NSString *trimmed(NSString *text) {
     return [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] ?: @"";
 }
 
-@interface SGLocalFileEditor : UITableViewController <UITextFieldDelegate, UIAdaptivePresentationControllerDelegate,
-                                                      UIImagePickerControllerDelegate, UINavigationControllerDelegate, UIDocumentPickerDelegate>
-- (instancetype)initWithURI:(NSString *)uri;
+@interface SGTrackEditor : UITableViewController <UITextFieldDelegate, UIAdaptivePresentationControllerDelegate,
+                                                   UIImagePickerControllerDelegate, UINavigationControllerDelegate, UIDocumentPickerDelegate>
+- (instancetype)initWithURI:(NSString *)uri albumURI:(NSString *)albumURI metadata:(NSDictionary *)metadata;
 @end
 
-@implementation SGLocalFileEditor {
+@implementation SGTrackEditor {
     NSString *_uri;
+    NSString *_albumURI;
     NSDictionary<NSString *, id> *_tags, *_shown;   // the file's own names, and the ones it goes by now
     NSArray<UITextField *> *_fields;
     NSArray<UILabel *> *_labels;
     NSArray<UIStackView *> *_stacks;
     NSArray<NSLayoutConstraint *> *_labelWidths;
-    UITableViewCell *_coverCell, *_restoreCell;
-    UIButton *_coverButton;
-    UIImage *_cover;            // the cover the row shows: the stored one, or the one just picked
+    UITableViewCell *_coverCell, *_coverAlbumCell, *_motionCell, *_motionAlbumCell, *_restoreCell;
+    UISwitch *_coverAlbumSwitch, *_motionAlbumSwitch;
+    UIButton *_coverButton, *_motionButton;
+    UIImage *_cover;
+    NSURL *_motion;
     SGCoverChange _coverChange;
-    BOOL _hasStoredCover;
+    SGMotionChange _motionChange;
+    BOOL _hasStoredCover, _hasStoredMotion, _pickingMotion, _motionIsTemporary, _motionPreparing;
+    BOOL _coverAlbumWide, _motionAlbumWide;
 }
 
-- (instancetype)initWithURI:(NSString *)uri {
+- (instancetype)initWithURI:(NSString *)uri albumURI:(NSString *)albumURI metadata:(NSDictionary *)metadata {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
     _uri = [uri copy];
-    _tags = SGLocalFileTags(uri) ?: @{};
-    _shown = SGLocalFileInfo(uri) ?: @{};
-    NSString *path = SGLocalFileCoverPath(SGLocalFileEditFor(uri));
+    _albumURI = [albumURI copy];
+    NSDictionary *edit = SGTrackEditFor(uri, albumURI);
+    NSMutableDictionary *tags = [NSMutableDictionary dictionary];
+    if (SGLocalFileIs(uri)) {
+        [tags addEntriesFromDictionary:SGLocalFileTags(uri) ?: @{}];
+    } else {
+        for (NSString *field in @[@"title", @"artist", @"album"]) {
+            NSString *key = [field isEqualToString:@"artist"] ? @"artist_name" : [field isEqualToString:@"album"] ? @"album_title" : @"title";
+            if ([metadata[key] isKindOfClass:NSString.class]) tags[field] = metadata[key];
+        }
+    }
+    _tags = tags;
+    NSMutableDictionary *shown = [tags mutableCopy];
+    for (NSString *field in fieldKeys()) if ([edit[field] isKindOfClass:NSString.class]) shown[field] = edit[field];
+    _shown = shown;
+    NSString *path = SGTrackArtworkCoverPath(edit);
     _cover = path ? [UIImage imageWithContentsOfFile:path] : nil;
     _hasStoredCover = _cover != nil;
+    NSString *motionPath = SGTrackArtworkMotionPath(edit);
+    _motion = motionPath ? [NSURL fileURLWithPath:motionPath] : nil;
+    _hasStoredMotion = _motion && [NSFileManager.defaultManager fileExistsAtPath:_motion.path];
+    NSDictionary *albumEdit = SGTrackEditFor(nil, albumURI);
+    _coverAlbumWide = SGTrackArtworkCoverPath(albumEdit) != nil;
+    _motionAlbumWide = SGTrackArtworkMotionPath(albumEdit) != nil;
 
     NSMutableArray *fields = [NSMutableArray array], *labels = [NSMutableArray array], *stacks = [NSMutableArray array], *widths = [NSMutableArray array];
     for (NSUInteger i = 0; i < fieldKeys().count; i++) {
@@ -86,7 +110,7 @@ static NSString *trimmed(NSString *text) {
         label.adjustsFontForContentSizeCategory = YES;
         label.isAccessibilityElement = NO;   // the field reads its own label
         UITextField *field = [UITextField new];
-        field.text = _shown[key];
+        field.text = [edit[key] isKindOfClass:NSString.class] ? edit[key] : nil;
         field.placeholder = _tags[key] ?: fieldLabels()[i];
         field.accessibilityLabel = fieldLabels()[i];
         field.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
@@ -126,15 +150,39 @@ static NSString *trimmed(NSString *text) {
     _coverButton.showsMenuAsPrimaryAction = YES;
     _coverButton.accessibilityLabel = @"Change cover";
     _coverCell.accessoryView = _coverButton;
+    _coverAlbumCell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    _coverAlbumCell.textLabel.text = @"Apply next cover to entire album";
+    _coverAlbumSwitch = [UISwitch new];
+    _coverAlbumSwitch.on = _coverAlbumWide;
+    _coverAlbumSwitch.enabled = _albumURI.length > 0;
+    [_coverAlbumSwitch addTarget:self action:@selector(coverAlbumChanged) forControlEvents:UIControlEventValueChanged];
+    _coverAlbumCell.accessoryView = _coverAlbumSwitch;
+    _coverAlbumCell.selectionStyle = UITableViewCellSelectionStyleNone;
+    _motionCell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+    _motionCell.selectionStyle = UITableViewCellSelectionStyleNone;
+    _motionButton = [UIButton buttonWithConfiguration:change primaryAction:nil];
+    _motionButton.showsMenuAsPrimaryAction = YES;
+    _motionButton.accessibilityLabel = @"Change animated artwork";
+    _motionCell.accessoryView = _motionButton;
+    _motionAlbumCell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    _motionAlbumCell.textLabel.text = @"Apply next animation to entire album";
+    _motionAlbumSwitch = [UISwitch new];
+    _motionAlbumSwitch.on = _motionAlbumWide;
+    _motionAlbumSwitch.enabled = _albumURI.length > 0;
+    [_motionAlbumSwitch addTarget:self action:@selector(motionAlbumChanged) forControlEvents:UIControlEventValueChanged];
+    _motionAlbumCell.accessoryView = _motionAlbumSwitch;
+    _motionAlbumCell.selectionStyle = UITableViewCellSelectionStyleNone;
     _restoreCell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     [self fitLabels];
     [self showCover];
+    [self showMotion];
     [self changed];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(fitLabels) name:UIContentSizeCategoryDidChangeNotification object:nil];
 }
 
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
+    if (_motionIsTemporary) [NSFileManager.defaultManager removeItemAtURL:_motion error:nil];
 }
 
 // The names' labels share one width so the fields line up; at the accessibility sizes each label goes
@@ -156,7 +204,11 @@ static NSString *trimmed(NSString *text) {
 
 - (NSDictionary<NSString *, NSString *> *)names {
     NSMutableDictionary<NSString *, NSString *> *names = [NSMutableDictionary dictionary];
-    for (NSUInteger i = 0; i < _fields.count; i++) names[fieldKeys()[i]] = _fields[i].text ?: @"";
+    for (NSUInteger i = 0; i < _fields.count; i++) {
+        NSString *field = fieldKeys()[i];
+        NSString *effective = [self effectiveName:i];
+        if (effective.length && ![effective isEqualToString:_tags[field] ?: @""]) names[field] = effective;
+    }
     return names;
 }
 
@@ -167,7 +219,7 @@ static NSString *trimmed(NSString *text) {
 }
 
 - (BOOL)isDirty {
-    if (_coverChange != SGCoverKept) return YES;
+    if (_motionPreparing || _coverChange != SGCoverKept || _motionChange != SGMotionKept) return YES;
     for (NSUInteger i = 0; i < _fields.count; i++) {
         if (![[self effectiveName:i] isEqualToString:_shown[fieldKeys()[i]] ?: @""]) return YES;
     }
@@ -175,7 +227,7 @@ static NSString *trimmed(NSString *text) {
 }
 
 - (BOOL)differsFromFile {
-    if (_cover) return YES;
+    if (_cover || _motion) return YES;
     for (NSUInteger i = 0; i < _fields.count; i++) {
         if (![[self effectiveName:i] isEqualToString:_tags[fieldKeys()[i]] ?: @""]) return YES;
     }
@@ -184,22 +236,24 @@ static NSString *trimmed(NSString *text) {
 
 - (void)changed {
     BOOL dirty = self.isDirty;
-    self.navigationItem.rightBarButtonItem.enabled = dirty;
+    self.navigationItem.rightBarButtonItem.enabled = dirty && !_motionPreparing;
+    self.navigationItem.leftBarButtonItem.enabled = !_motionPreparing;
+    _motionButton.enabled = !_motionPreparing;
     // A swipe down then asks before the changes go (presentationControllerDidAttemptToDismiss:).
     self.modalInPresentation = dirty;
-    BOOL restorable = self.differsFromFile;
+    BOOL restorable = self.differsFromFile || _hasStoredCover || _hasStoredMotion;
     UIListContentConfiguration *content = [UIListContentConfiguration cellConfiguration];
     content.text = @"Restore file's info";
     content.textProperties.color = restorable ? UIColor.systemRedColor : UIColor.tertiaryLabelColor;
     _restoreCell.contentConfiguration = content;
-    _restoreCell.userInteractionEnabled = restorable;
+    _restoreCell.userInteractionEnabled = restorable && !_motionPreparing;
     _restoreCell.accessibilityTraits = UIAccessibilityTraitButton | (restorable ? 0 : UIAccessibilityTraitNotEnabled);
 }
 
 - (void)showCover {
     UIListContentConfiguration *content = [UIListContentConfiguration subtitleCellConfiguration];
     content.text = @"Cover";
-    content.secondaryText = !_cover ? @"The file's own" : _coverChange == SGCoverPicked ? @"New picture" : @"Your picture";
+    content.secondaryText = !_cover ? @"Spotify's original" : _coverChange == SGCoverPicked ? @"New picture" : @"Custom picture";
     content.secondaryTextProperties.color = UIColor.secondaryLabelColor;
     content.image = _cover ?: [UIImage systemImageNamed:@"music.note"];
     content.imageProperties.preferredSymbolConfiguration = [UIImageSymbolConfiguration configurationWithTextStyle:UIFontTextStyleTitle2];
@@ -230,12 +284,85 @@ static NSString *trimmed(NSString *text) {
     [_coverButton sizeToFit];
 }
 
-// nil removes the cover: the stored one goes on Save, a picked one goes at once.
+- (void)showMotion {
+    _motionCell.textLabel.text = @"Animated artwork";
+    _motionCell.detailTextLabel.text = !_motion ? @"Spotify's Canvas" :
+        _motionChange == SGMotionPicked ? @"New custom video" : @"Custom video";
+    __weak typeof(self) weakSelf = self;
+    NSMutableArray<UIMenuElement *> *items = [NSMutableArray arrayWithArray:@[
+        [UIAction actionWithTitle:@"Choose video or GIF from Files" image:[UIImage systemImageNamed:@"folder"] identifier:nil handler:^(UIAction *action) {
+            [weakSelf pickMotionFromFiles];
+        }],
+        [UIAction actionWithTitle:@"Choose video from Photos" image:[UIImage systemImageNamed:@"video"] identifier:nil handler:^(UIAction *action) {
+            [weakSelf pickMotionFromPhotos];
+        }],
+    ]];
+    if (_motion) {
+        UIAction *remove = [UIAction actionWithTitle:@"Remove custom artwork" image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction *action) {
+            [weakSelf useMotion:nil];
+        }];
+        remove.attributes = UIMenuElementAttributesDestructive;
+        [items addObject:remove];
+    }
+    _motionButton.menu = [UIMenu menuWithChildren:items];
+    [_motionButton sizeToFit];
+}
+
 - (void)useCover:(UIImage *)image {
     _cover = image;
     _coverChange = image ? SGCoverPicked : _hasStoredCover ? SGCoverRemoved : SGCoverKept;
     [self showCover];
     [self changed];
+}
+
+- (void)useMotion:(NSURL *)motion {
+    if (!motion) {
+        if (_motionIsTemporary) [NSFileManager.defaultManager removeItemAtURL:_motion error:nil];
+        _motionIsTemporary = NO;
+        _motion = nil;
+        _motionChange = _hasStoredMotion ? SGMotionRemoved : SGMotionKept;
+        [self showMotion];
+        [self changed];
+        return;
+    }
+    _motionPreparing = YES;
+    [self changed];
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        BOOL temporary = NO;
+        NSError *error = nil;
+        NSURL *prepared = SGTrackPrepareMotion(motion, &temporary, &error);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SGTrackEditor *editor = weakSelf;
+            if (!editor) {
+                if (temporary && prepared) [NSFileManager.defaultManager removeItemAtURL:prepared error:nil];
+                return;
+            }
+            editor->_motionPreparing = NO;
+            if (!prepared) {
+                [editor changed];
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Couldn't use animated artwork"
+                    message:error.localizedDescription ?: @"The selected video could not be prepared." preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+                [editor presentViewController:alert animated:YES completion:nil];
+                return;
+            }
+            if (editor->_motionIsTemporary) [NSFileManager.defaultManager removeItemAtURL:editor->_motion error:nil];
+            editor->_motion = prepared;
+            editor->_motionIsTemporary = temporary;
+            editor->_motionChange = SGMotionPicked;
+            [editor showMotion];
+            [editor changed];
+        });
+    });
+}
+
+- (void)coverAlbumChanged {
+    _coverAlbumWide = _coverAlbumSwitch.on;
+}
+
+- (void)motionAlbumChanged {
+    _motionAlbumWide = _motionAlbumSwitch.on;
 }
 
 #pragma mark - the actions
@@ -244,11 +371,27 @@ static NSString *trimmed(NSString *text) {
     for (NSUInteger i = 0; i < _fields.count; i++) _fields[i].text = _tags[fieldKeys()[i]];
     [self.view endEditing:YES];
     [self useCover:nil];
+    [self useMotion:nil];
+    _coverAlbumWide = NO;
+    _motionAlbumWide = NO;
+    _coverAlbumSwitch.on = NO;
+    _motionAlbumSwitch.on = NO;
+    [self changed];
 }
 
 - (void)save {
     [self.view endEditing:YES];
-    SGLocalFileSaveEdit(_uri, self.names, _coverChange == SGCoverPicked ? _cover : nil, _coverChange != SGCoverRemoved);
+    NSError *error = nil;
+    BOOL saved = SGTrackSaveEdit(_uri, _albumURI, self.names,
+        _coverChange == SGCoverPicked ? _cover : nil, _coverChange != SGCoverKept, _coverAlbumWide,
+        _motionChange == SGMotionPicked ? _motion : nil, _motionChange != SGMotionKept, _motionAlbumWide, &error);
+    if (!saved) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Couldn't save edit"
+            message:error.localizedDescription ?: @"The changes could not be saved." preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
@@ -289,17 +432,49 @@ static NSString *trimmed(NSString *text) {
     [self presentViewController:picker animated:YES completion:nil];
 }
 
+- (void)pickMotionFromFiles {
+    [self.view endEditing:YES];
+    _pickingMotion = YES;
+    UIDocumentPickerViewController *documents = [[UIDocumentPickerViewController alloc]
+        initForOpeningContentTypes:@[UTType.movie, UTType.gif] asCopy:YES];
+    documents.delegate = self;
+    [self presentViewController:documents animated:YES completion:nil];
+}
+
+- (void)pickMotionFromPhotos {
+    [self.view endEditing:YES];
+    _pickingMotion = YES;
+    UIImagePickerController *photos = [UIImagePickerController new];
+    photos.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+    photos.mediaTypes = @[UTType.movie.identifier];
+    photos.videoQuality = UIImagePickerControllerQualityTypeHigh;
+    photos.delegate = self;
+    [self presentViewController:photos animated:YES completion:nil];
+}
+
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey, id> *)info {
-    UIImage *image = info[UIImagePickerControllerOriginalImage];
-    if (image) [self useCover:image];
+    if (_pickingMotion) {
+        NSURL *motion = info[UIImagePickerControllerMediaURL];
+        if (motion) [self useMotion:motion];
+        _pickingMotion = NO;
+    } else {
+        UIImage *image = info[UIImagePickerControllerOriginalImage];
+        if (image) [self useCover:image];
+    }
     [picker dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
+    _pickingMotion = NO;
     [picker dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    if (_pickingMotion) {
+        _pickingMotion = NO;
+        if (urls.firstObject) [self useMotion:urls.firstObject];
+        return;
+    }
     NSData *data = urls.firstObject ? [NSData dataWithContentsOfURL:urls.firstObject] : nil;
     UIImage *image = data ? [UIImage imageWithData:data] : nil;
     if (image) {
@@ -313,6 +488,10 @@ static NSString *trimmed(NSString *text) {
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
+    _pickingMotion = NO;
+}
+
 - (BOOL)textFieldShouldReturn:(UITextField *)field {
     NSUInteger i = [_fields indexOfObject:field];
     if (i != NSNotFound && i + 1 < _fields.count) [_fields[i + 1] becomeFirstResponder];
@@ -323,20 +502,25 @@ static NSString *trimmed(NSString *text) {
 #pragma mark - the table
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return 3;
+    return 4;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return section == 0 ? (NSInteger)_fields.count : 1;
+    if (section == 0) return (NSInteger)_fields.count;
+    if (section == 1 || section == 2) return 2;
+    return 1;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    return section == 0 ? @"Kept by Taurus for this file. The file itself is not changed." : nil;
+    if (section == 0) return @"Saved by Taurus for this song. Spotify's original file or catalog entry is not changed.";
+    if (section == 1 || section == 2) return @"Each switch controls whether the next custom upload applies to this song or every song on its Spotify album.";
+    return nil;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section == 1) return _coverCell;
-    if (indexPath.section == 2) return _restoreCell;
+    if (indexPath.section == 1) return indexPath.row == 0 ? _coverCell : _coverAlbumCell;
+    if (indexPath.section == 2) return indexPath.row == 0 ? _motionCell : _motionAlbumCell;
+    if (indexPath.section == 3) return _restoreCell;
     // One cell per name, made once: the field keeps what was typed while the table scrolls.
     UIStackView *stack = _stacks[(NSUInteger)indexPath.row];
     if (stack.superview) return (UITableViewCell *)stack.superview.superview;
@@ -356,7 +540,7 @@ static NSString *trimmed(NSString *text) {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     if (indexPath.section == 0) [_fields[(NSUInteger)indexPath.row] becomeFirstResponder];
-    if (indexPath.section == 2) [self restore];
+    if (indexPath.section == 3) [self restore];
 }
 
 @end
@@ -367,9 +551,9 @@ static UIViewController *topOf(UIViewController *presenter) {
     return top;
 }
 
-void SGLocalFilePresentEditor(UIViewController *presenter, NSString *uri) {
-    if (!presenter || !SGLocalFileIs(uri)) return;
-    SGLocalFileEditor *editor = [[SGLocalFileEditor alloc] initWithURI:uri];
+void SGTrackPresentEditor(UIViewController *presenter, NSString *uri, NSString *albumURI, NSDictionary *metadata) {
+    if (!presenter || (!SGLocalFileIs(uri) && ![uri hasPrefix:@"spotify:track:"])) return;
+    SGTrackEditor *editor = [[SGTrackEditor alloc] initWithURI:uri albumURI:albumURI metadata:metadata];
     UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:editor];
     navigation.modalPresentationStyle = UIModalPresentationFormSheet;
     // Outside Spotify's navigation stacks a sheet takes the system's appearance, light in light mode.
@@ -385,6 +569,8 @@ void SGLocalFilePresentEditor(UIViewController *presenter, NSString *uri) {
 
 @interface SGEditInfoRow : UIControl
 @property (nonatomic, copy) NSString *uri;
+@property (nonatomic, copy) NSString *albumURI;
+@property (nonatomic, copy) NSDictionary *metadata;
 @property (nonatomic, weak) UIViewController *menu;
 @end
 
@@ -437,11 +623,13 @@ void SGLocalFilePresentEditor(UIViewController *presenter, NSString *uri) {
 - (void)open {
     UIViewController *menu = self.menu, *host = menu.presentingViewController;
     NSString *uri = self.uri;
+    NSString *albumURI = self.albumURI;
+    NSDictionary *metadata = self.metadata;
     if (!host) {
-        SGLocalFilePresentEditor(menu, uri);
+        SGTrackPresentEditor(menu, uri, albumURI, metadata);
         return;
     }
-    [menu dismissViewControllerAnimated:YES completion:^{ SGLocalFilePresentEditor(host, uri); }];
+    [menu dismissViewControllerAnimated:YES completion:^{ SGTrackPresentEditor(host, uri, albumURI, metadata); }];
 }
 
 @end
@@ -466,6 +654,110 @@ static void decide(UIViewController *menu, BOOL offered) {
     objc_setAssociatedObject(menu, &kDecidedKey, @(offered), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
+static BOOL isTrackURI(id value) {
+    return [value isKindOfClass:NSString.class]
+        && ([value hasPrefix:@"spotify:track:"] || SGLocalFileIs(value));
+}
+
+static void inspectMenuValue(id value, NSUInteger depth, NSHashTable *visited,
+                             NSMutableSet<NSString *> *trackURIs, NSMutableSet<NSString *> *albumURIs,
+                             NSMutableDictionary<NSString *, NSDictionary *> *metadataByURI) {
+    if (!value || depth > 7) return;
+    if ([value isKindOfClass:NSString.class]) {
+        if (isTrackURI(value)) [trackURIs addObject:value];
+        else if ([value hasPrefix:@"spotify:album:"]) [albumURIs addObject:value];
+        return;
+    }
+    if ([value isKindOfClass:NSNumber.class] || [value isKindOfClass:NSDate.class] || [visited containsObject:value]) return;
+    [visited addObject:value];
+
+    NSString *className = NSStringFromClass([value class]);
+    if (depth && [value isKindOfClass:UIViewController.class]
+        && ![className containsString:@"ContextMenu"] && ![className containsString:@"HostingController"]) return;
+    if ([className containsString:@"SPTPlayerTrack"] && [value respondsToSelector:@selector(URI)]) {
+        id (*objectGetter)(id, SEL) = (id (*)(id, SEL))objc_msgSend;
+        NSString *uri = SGURIString(objectGetter(value, @selector(URI)));
+        if (isTrackURI(uri)) {
+            [trackURIs addObject:uri];
+            NSDictionary *metadata = [value respondsToSelector:@selector(metadata)] ? objectGetter(value, @selector(metadata)) : nil;
+            metadata = SGTrackOriginalMetadata((SPTPlayerTrack *)value) ?: metadata;
+            if ([metadata isKindOfClass:NSDictionary.class]) {
+                metadataByURI[uri] = metadata;
+                id albumURI = metadata[@"album_uri"];
+                if ([albumURI isKindOfClass:NSString.class]) [albumURIs addObject:albumURI];
+            }
+        }
+        return;
+    }
+    if ([value isKindOfClass:NSDictionary.class]) {
+        NSDictionary *dictionary = value;
+        NSString *dictionaryTrackURI = nil;
+        for (id childKey in dictionary) {
+            if (![childKey isKindOfClass:NSString.class]) continue;
+            NSString *key = [childKey lowercaseString];
+            id child = dictionary[childKey];
+            if (([key isEqualToString:@"uri"] || ([key containsString:@"track"] && [key containsString:@"uri"]))
+                && isTrackURI(child)) {
+                dictionaryTrackURI = child;
+                break;
+            }
+        }
+        if (dictionaryTrackURI) {
+            NSMutableDictionary *metadata = [NSMutableDictionary dictionary];
+            NSDictionary *nested = [dictionary[@"metadata"] isKindOfClass:NSDictionary.class] ? dictionary[@"metadata"] : dictionary;
+            for (NSString *field in @[@"title", @"artist_name", @"album_title", @"album_uri"]) {
+                id child = nested[field];
+                if ([child isKindOfClass:NSString.class]) metadata[field] = child;
+            }
+            if (metadata.count) metadataByURI[dictionaryTrackURI] = metadata;
+        }
+        [(NSDictionary *)value enumerateKeysAndObjectsUsingBlock:^(id childKey, id child, BOOL *stop) {
+            if ([childKey isKindOfClass:NSString.class] && [childKey containsString:@"album_uri"]
+                && [child isKindOfClass:NSString.class]) [albumURIs addObject:child];
+            inspectMenuValue(child, depth + 1, visited, trackURIs, albumURIs, metadataByURI);
+        }];
+        return;
+    }
+    if ([value isKindOfClass:NSArray.class] || [value isKindOfClass:NSSet.class]) {
+        for (id child in value) inspectMenuValue(child, depth + 1, visited, trackURIs, albumURIs, metadataByURI);
+        return;
+    }
+    if ([value isKindOfClass:UIView.class]) return;
+
+    for (Class type = [value class]; type && type != NSObject.class; type = class_getSuperclass(type)) {
+        unsigned int count = 0;
+        Ivar *ivars = class_copyIvarList(type, &count);
+        for (unsigned int index = 0; index < count; index++) {
+            Ivar ivar = ivars[index];
+            const char *encoding = ivar_getTypeEncoding(ivar);
+            if (encoding && encoding[0] == '@') {
+                inspectMenuValue(object_getIvar(value, ivar), depth + 1, visited, trackURIs, albumURIs, metadataByURI);
+            }
+        }
+        free(ivars);
+    }
+}
+
+static NSDictionary *menuTrack(UIViewController *menu) {
+    NSMutableSet<NSString *> *trackURIs = [NSMutableSet set];
+    NSMutableSet<NSString *> *albumURIs = [NSMutableSet set];
+    NSMutableDictionary<NSString *, NSDictionary *> *metadataByURI = [NSMutableDictionary dictionary];
+    NSHashTable *visited = [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality];
+    inspectMenuValue(menu, 0, visited, trackURIs, albumURIs, metadataByURI);
+    if (trackURIs.count != 1) return nil;
+    NSString *uri = trackURIs.anyObject;
+    NSDictionary *metadata = metadataByURI[uri];
+    if (!metadata && [SGURIString(SGPlayerState().track.URI) isEqualToString:uri]) {
+        NSDictionary *playingMetadata = SGPlayerState().track.metadata;
+        metadata = SGTrackOriginalMetadata(SGPlayerState().track) ?: playingMetadata;
+        id playingAlbumURI = metadata[@"album_uri"];
+        if ([playingAlbumURI isKindOfClass:NSString.class]) [albumURIs addObject:playingAlbumURI];
+    }
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"]
+        : albumURIs.count == 1 ? albumURIs.anyObject : nil;
+    return @{@"uri": uri, @"albumURI": albumURI ?: NSNull.null, @"metadata": metadata ?: NSNull.null};
+}
+
 static void install(UIViewController *menu) {
     UIView *root = menu.viewIfLoaded;
     if (!root || [objc_getAssociatedObject(menu, &kDecidedKey) isEqual:@NO]) return;
@@ -474,11 +766,22 @@ static void install(UIViewController *menu) {
     if (width <= 0) return;
     SGEditInfoRow *row = objc_getAssociatedObject(menu, &kRowKey);
     if (!row) {
-        NSString *uri = SGURIString(SGPlayerState().track.URI);
-        if (!SGLocalFileIs(uri)) {
-            decide(menu, NO);
+        NSNumber *lastProbe = objc_getAssociatedObject(menu, &kTrackProbeKey);
+        if (lastProbe && NSDate.date.timeIntervalSince1970 - lastProbe.doubleValue < 0.25) return;
+        objc_setAssociatedObject(menu, &kTrackProbeKey, @(NSDate.date.timeIntervalSince1970), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        NSDictionary *track = menuTrack(menu);
+        if (!track) {
+            NSUInteger probes = [objc_getAssociatedObject(menu, &kTrackProbeCountKey) unsignedIntegerValue] + 1;
+            objc_setAssociatedObject(menu, &kTrackProbeCountKey, @(probes), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            if (probes >= 12) {
+                SGLog(@"track info: no unique song found in %@; Edit info left out", NSStringFromClass(menu.class));
+                decide(menu, NO);
+            }
             return;
         }
+        NSString *uri = track[@"uri"];
+        NSString *albumURI = track[@"albumURI"] == NSNull.null ? nil : track[@"albumURI"];
+        NSDictionary *metadata = track[@"metadata"] == NSNull.null ? nil : track[@"metadata"];
         // A header of Spotify's own sends Speed and pitch to the footer.
         UIView *header = table.tableHeaderView;
         BOOL headerOurs = freeSlot(header) || [NSStringFromClass(header.class) hasPrefix:@"SG"];
@@ -491,11 +794,13 @@ static void install(UIViewController *menu) {
         decide(menu, YES);
         row = [[SGEditInfoRow alloc] initWithFrame:CGRectMake(0, 0, width, kRowHeight)];
         row.uri = uri;
+        row.albumURI = albumURI;
+        row.metadata = metadata;
         row.menu = menu;
         objc_setAssociatedObject(menu, &kRowKey, row, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         table.tableFooterView = row;
         [table invalidateIntrinsicContentSize];
-        SGLog(@"local files: Edit info offered for %@", uri);
+        SGLog(@"track info: Edit info offered for %@", uri);
         return;
     }
     // Spotify replaced the footer, or the table changed width: put it back at the table's width.

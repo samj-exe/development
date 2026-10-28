@@ -12,13 +12,20 @@
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRBridges.h"
 #import "Home.h"
 
 static const CGFloat kScale = 1.4, kSmallest = 120, kHeading = 40;
+static const NSInteger kGradientDefault = 0, kGradientCustom = 1, kGradientSong = 2;
 // Room added under a large card's text, so a long title or an author's name stays inside the glass card.
 static const CGFloat kTextRoom = 24;
+static NSNotificationName const kGradientSettingsDidChange = @"spotifyglass.redesign.home.gradientSettingsDidChange";
 static char kAuraKey, kAuraShownKey, kAuraImageKey, kAuraTriesKey;
 static char kLargeKey, kNaturalKey, kWrappedKey, kWidthKey, kAskedKey;
+static __weak UICollectionView *sg_homeList;
+static UIColor *sg_topPickColor;
+static NSString *sg_songAuraIdentity;
+static NSUInteger sg_songAuraRequest;
 static _Thread_local BOOL sg_enlarging;
 // The narrowest size kSmallest or more wide the running provider made, at Spotify's width: its cards.
 static _Thread_local CGFloat sg_cardWidth;
@@ -304,6 +311,124 @@ SGModRow *SGRHomeTopPicksRow(void) {
     return SGWithSymbol(SGSwitchRow(@"Top picks", @"Draw Home's first shelf large", SGRKeyHomeTopPicks), @"rectangle.stack");
 }
 
+static NSInteger gradientMode(void) {
+    NSInteger mode = SGInt(SGRKeyHomeGradientMode, kGradientDefault);
+    return mode >= kGradientDefault && mode <= kGradientSong ? mode : kGradientDefault;
+}
+
+static UIColor *gradientColorFromRGB(NSInteger rgb) {
+    if (rgb < 0 || rgb > 0xFFFFFF) return nil;
+    return [UIColor colorWithRed:((rgb >> 16) & 0xFF) / 255.0
+                           green:((rgb >> 8) & 0xFF) / 255.0
+                            blue:(rgb & 0xFF) / 255.0 alpha:1];
+}
+
+static NSInteger rgbFromColor(UIColor *color) {
+    CGFloat r = 0, g = 0, b = 0, a = 0;
+    if (![color getRed:&r green:&g blue:&b alpha:&a]) return -1;
+    return ((NSInteger)lround(MIN(1, MAX(0, r)) * 255) << 16)
+         | ((NSInteger)lround(MIN(1, MAX(0, g)) * 255) << 8)
+         | (NSInteger)lround(MIN(1, MAX(0, b)) * 255);
+}
+
+static UIColor *liftAuraColor(UIColor *color) {
+    CGFloat h, saturation, brightness, alpha;
+    if (![color getHue:&h saturation:&saturation brightness:&brightness alpha:&alpha]) return color;
+    return [UIColor colorWithHue:h saturation:MIN(1, saturation * 1.1)
+                      brightness:MIN(0.6, MAX(brightness, 0.1) * 1.9) alpha:1];
+}
+
+static void paintAura(UICollectionView *list, UIColor *color);
+
+static void refreshSongAura(void) {
+    if (gradientMode() != kGradientSong) return;
+    NSString *trackURI = nil, *identity = nil;
+    UIImage *image = SGRNowPlayingArtwork(&trackURI, &identity);
+    if (!image) {
+        sg_songAuraIdentity = nil;
+        if (sg_homeList && sg_topPickColor) paintAura(sg_homeList, sg_topPickColor);
+        return;
+    }
+    NSString *key = identity.length ? identity : [NSString stringWithFormat:@"%@:%p", trackURI, image];
+    if ([key isEqualToString:sg_songAuraIdentity]) return;
+    sg_songAuraIdentity = [key copy];
+    NSUInteger request = ++sg_songAuraRequest;
+    __weak UICollectionView *weakList = sg_homeList;
+    [SGRPalette paletteForImage:image request:(SGRPaletteRequest){0} completion:^(SGRPalette *palette) {
+        UICollectionView *list = weakList;
+        if (!list || request != sg_songAuraRequest || gradientMode() != kGradientSong || !palette) return;
+        paintAura(list, liftAuraColor(palette.fieldColor));
+    }];
+}
+
+void SGRHomeGradientRefresh(void) {
+    sg_songAuraIdentity = nil;
+    sg_songAuraRequest++;
+    NSInteger mode = gradientMode();
+    if (!sg_homeList) return;
+    if (mode == kGradientCustom) {
+        UIColor *custom = gradientColorFromRGB(SGInt(SGRKeyHomeGradientColor, -1));
+        if (custom) paintAura(sg_homeList, custom);
+        else if (sg_topPickColor) paintAura(sg_homeList, sg_topPickColor);
+    } else if (mode == kGradientSong) {
+        refreshSongAura();
+    } else if (sg_topPickColor) {
+        paintAura(sg_homeList, sg_topPickColor);
+    }
+}
+
+@interface SGRHomeGradientPicker : NSObject <UIColorPickerViewControllerDelegate>
+@end
+
+@implementation SGRHomeGradientPicker
+- (void)colorPickerViewControllerDidFinish:(UIColorPickerViewController *)picker {
+    NSInteger rgb = rgbFromColor(picker.selectedColor);
+    if (rgb < 0) return;
+    SGSetInt(SGRKeyHomeGradientColor, rgb);
+    SGSetInt(SGRKeyHomeGradientMode, kGradientCustom);
+    SGRHomeGradientRefresh();
+    [NSNotificationCenter.defaultCenter postNotificationName:kGradientSettingsDidChange object:nil];
+}
+@end
+
+static void pickGradientColor(void) {
+    static SGRHomeGradientPicker *delegate;
+    if (!delegate) delegate = [SGRHomeGradientPicker new];
+    UIColorPickerViewController *picker = [UIColorPickerViewController new];
+    picker.supportsAlpha = NO;
+    UIColor *stored = gradientColorFromRGB(SGInt(SGRKeyHomeGradientColor, -1));
+    picker.selectedColor = stored ?: SGRAccent();
+    picker.delegate = delegate;
+    [SGTopController() presentViewController:picker animated:YES completion:nil];
+}
+
+NSArray<SGModRow *> *SGRHomeGradientRows(void) {
+    static NSArray<NSString *> *names;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        names = @[@"Top pick", @"Custom colour", @"Follow song"];
+    });
+    SGModRow *mode = SGMenuRow(@"Top gradient", names, ^NSString *{
+        NSInteger value = gradientMode();
+        return names[(NSUInteger)value];
+    }, ^(NSInteger index) {
+        SGSetInt(SGRKeyHomeGradientMode, index);
+        SGRHomeGradientRefresh();
+        [NSNotificationCenter.defaultCenter postNotificationName:kGradientSettingsDidChange object:nil];
+    });
+    mode.visible = ^BOOL { return SGRHomeGlassStyle(); };
+    mode.refreshOn = kGradientSettingsDidChange;
+    SGModRow *color = SGStatActionRow(@"Custom gradient colour", nil, ^NSString *{
+        UIColor *stored = gradientColorFromRGB(SGInt(SGRKeyHomeGradientColor, -1));
+        if (!stored) return @"Choose colour";
+        NSInteger rgb = rgbFromColor(stored);
+        return [NSString stringWithFormat:@"#%06lX", (long)rgb];
+    }, ^{ pickGradientColor(); });
+    color.visible = ^BOOL { return SGRHomeGlassStyle() && gradientMode() == kGradientCustom; };
+    color.refreshOn = kGradientSettingsDidChange;
+    return @[mode, color];
+}
+
 // The cards style themselves as they lay out, which can be before the shelf is large: ask each once more.
 static void pokeCards(UICollectionView *shelf) {
     static char kPokedKey;
@@ -392,6 +517,11 @@ static void followAlbum(UICollectionView *shelf) {
     if (!SGRHomeGlassStyle()) return;
     UICollectionView *list = pageListOf(shelf);
     if (!list) return;
+    sg_homeList = list;
+    if (gradientMode() == kGradientCustom) {
+        SGRHomeGradientRefresh();
+        return;
+    }
     UIView *lead = nil;
     CGFloat best = CGFLOAT_MAX, edge = shelf.contentOffset.x + SGRSideMargin;
     for (UICollectionViewCell *cell in shelf.visibleCells) {
@@ -419,11 +549,10 @@ static void followAlbum(UICollectionView *shelf) {
         UICollectionView *s = weakShelf;
         if (!s || !palette || objc_getAssociatedObject(s, &kAuraShownKey) != image) return;
         UICollectionView *page = pageListOf(s);
-        // The field colour is dark by design: lift it so the gradient reads like the cover's colour.
-        CGFloat h, sat, b, a;
-        UIColor *c = palette.fieldColor;
-        if ([c getHue:&h saturation:&sat brightness:&b alpha:&a]) c = [UIColor colorWithHue:h saturation:MIN(1, sat * 1.1) brightness:MIN(0.6, MAX(b, 0.1) * 1.9) alpha:1];
-        if (page) paintAura(page, c);
+        sg_topPickColor = liftAuraColor(palette.fieldColor);
+        NSInteger mode = gradientMode();
+        if (page && mode == kGradientDefault) paintAura(page, sg_topPickColor);
+        else if (mode == kGradientSong) refreshSongAura();
     }];
 }
 
@@ -451,5 +580,9 @@ static void followAlbum(UICollectionView *shelf) {
 
 %ctor {
     if (!SGRedesignedUI() || (!SGRHomeGlassStyle() && !SGFlag(SGRKeyHomeTopPicks, NO))) return;
+    [NSNotificationCenter.defaultCenter addObserverForName:SGRNowPlayingArtworkDidChangeNotification object:nil
+                                                      queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+        if (gradientMode() == kGradientSong) refreshSongAura();
+    }];
     %init;
 }

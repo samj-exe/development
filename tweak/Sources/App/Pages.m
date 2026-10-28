@@ -101,6 +101,7 @@ UIViewController *SGAppearanceSettingsPage(void) {
             [rows addObjectsFromArray:SGRAppearanceRows()];
             [rows addObject:SGRHomeStyleRow()];
             [rows addObject:SGRHomeTopPicksRow()];
+            [rows addObjectsFromArray:SGRHomeGradientRows()];
         } else {
             [rows addObjectsFromArray:SGNativeAppearanceRows()];
         }

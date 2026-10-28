@@ -1,4 +1,4 @@
-// A local file's edit laid over what Spotify read from it (LocalFiles.h).
+// A track's edit laid over what Spotify read from it (LocalFiles.h).
 //
 // -[SPTPlayerTrack metadata] is the one place: trackTitle, artistName, albumTitle and imageURL each read
 // self.metadata and take title, artist_name, album_title and image_url from it (their code in the
@@ -13,6 +13,7 @@
 // preventPersistentCaching answer YES), so a stored cover is read from disk each time and passed on
 // the same way. The system's now playing artwork is added too, in case Spotify fetches it apart.
 #import <MediaPlayer/MediaPlayer.h>
+#import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Headers/SPTLocalAVAssetImageLoaderRequest.h"
 #import "Headers/SPTPlayer.h"
@@ -20,17 +21,26 @@
 #import "Shared/Player/PlayerState.h"
 #import "LocalFiles.h"
 
+static char kOriginalMetadataKey;
+
+NSDictionary *SGTrackOriginalMetadata(SPTPlayerTrack *track) {
+    id metadata = track ? objc_getAssociatedObject(track, &kOriginalMetadataKey) : nil;
+    return [metadata isKindOfClass:NSDictionary.class] ? metadata : nil;
+}
+
 // Called for every track in every list many times a second: one prefix check for any other track.
 static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
-    NSDictionary *edit = SGLocalFileEditFor(uri);
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSDictionary *edit = SGTrackEditFor(uri, albumURI);
     if (!edit) return metadata;
+    NSString *coverPath = SGTrackArtworkCoverPath(edit);
+    if (![edit[@"title"] length] && ![edit[@"artist"] length] && ![edit[@"album"] length] && !coverPath) return metadata;
     NSMutableDictionary *edited = metadata ? [metadata mutableCopy] : [NSMutableDictionary dictionary];
     if ([edit[@"title"] length]) edited[@"title"] = edit[@"title"];
     if ([edit[@"artist"] length]) edited[@"artist_name"] = edit[@"artist"];
     if ([edit[@"album"] length]) edited[@"album_title"] = edit[@"album"];
-    NSString *cover = SGLocalFileCoverURL(SGLocalFileCoverPath(edit));
-    // Every size, since a reader may take any of them: Spotify's loader, and the redesign's artwork bridge
-    // (Redesigned/Kit/SGRBridges.x), which reads the stored file itself.
+    NSString *cover = SGLocalFileCoverURL(coverPath);
+    // Every size, since Spotify's player and artwork loaders can ask for any one of them.
     if (cover) {
         for (NSString *field in @[@"image_small_url", @"image_url", @"image_large_url", @"image_xlarge_url"]) edited[field] = cover;
     }
@@ -39,10 +49,10 @@ static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
 
 #pragma mark - the system's now playing artwork
 
-@interface SGLocalFileNowPlaying : NSObject <SGPlayerStateObserver>
+@interface SGTrackNowPlaying : NSObject <SGPlayerStateObserver>
 @end
 
-@implementation SGLocalFileNowPlaying {
+@implementation SGTrackNowPlaying {
     NSString *_track;
 }
 
@@ -50,7 +60,9 @@ static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
 // player's track and the file's own when it did not, so the artwork rides on either.
 - (void)show:(SPTPlayerState *)state {
     NSString *uri = SGURIString(state.track.URI);
-    NSString *path = SGLocalFileCoverPath(SGLocalFileEditFor(uri));
+    NSDictionary *metadata = [state.track.metadata isKindOfClass:NSDictionary.class] ? state.track.metadata : nil;
+    NSDictionary *edit = SGTrackEditFor(uri, metadata[@"album_uri"]);
+    NSString *path = SGTrackArtworkCoverPath(edit);
     UIImage *cover = path ? [UIImage imageWithContentsOfFile:path] : nil;
     if (!cover) {
         SGNowPlayingSetExtras(@"localFiles", nil, nil);
@@ -60,8 +72,8 @@ static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
     MPMediaItemArtwork *artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:cover.size requestHandler:^UIImage *(CGSize size) {
         return cover;
     }];
-    SGNowPlayingSetExtras(@"localFiles", @{MPMediaItemPropertyArtwork: artwork}, SGLocalFileInfo(uri)[@"title"]);
-    SGNowPlayingSetExtras(@"localFiles.tags", @{MPMediaItemPropertyArtwork: artwork}, SGLocalFileTags(uri)[@"title"]);
+    NSString *title = [metadata[@"title"] isKindOfClass:NSString.class] ? metadata[@"title"] : state.track.trackTitle;
+    SGNowPlayingSetExtras(@"localFiles", @{MPMediaItemPropertyArtwork: artwork}, title);
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
@@ -72,7 +84,9 @@ static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
 }
 
 - (void)editsChanged:(NSNotification *)note {
-    if ([note.object isEqual:_track]) [self show:SGPlayerState()];
+    SPTPlayerState *state = SGPlayerState();
+    NSString *albumURI = state.track.metadata[@"album_uri"];
+    if ([note.object isEqual:_track] || [note.userInfo[@"albumURI"] isEqual:albumURI]) [self show:state];
 }
 
 @end
@@ -82,8 +96,9 @@ static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
 %hook SPTPlayerTrack
 - (NSDictionary *)metadata {
     NSDictionary *metadata = %orig;
+    if ([metadata isKindOfClass:NSDictionary.class]) objc_setAssociatedObject(self, &kOriginalMetadataKey, metadata, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     NSString *uri = SGURIString(self.URI);
-    return SGLocalFileIs(uri) ? withEdit(metadata, uri) : metadata;
+    return withEdit(metadata, uri);
 }
 %end
 
@@ -106,8 +121,8 @@ static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
 
 %ctor {
     %init;
-    static SGLocalFileNowPlaying *nowPlaying;
-    nowPlaying = [SGLocalFileNowPlaying new];
+    static SGTrackNowPlaying *nowPlaying;
+    nowPlaying = [SGTrackNowPlaying new];
     SGAddPlayerStateObserver(nowPlaying);
     [NSNotificationCenter.defaultCenter addObserver:nowPlaying selector:@selector(editsChanged:) name:SGLocalFileEditsDidChangeNotification object:nil];
     SGRequireClasses(@[@"SPTPlayerTrack", @"SPTLocalAVAssetImageLoaderRequest"]);

@@ -3,6 +3,7 @@
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Shared/Player/PlayerState.h"
+#import "Shared/LocalFiles/LocalFiles.h"
 #import "AnimatedArtwork.h"
 #import "SGMotionClip.h"
 
@@ -39,12 +40,15 @@
                 [follower restart];
             });
         }];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(editsChanged:)
+        name:SGLocalFileEditsDidChangeNotification object:nil];
     SGAddPlayerStateObserver(self);
     return self;
 }
 
 - (void)dealloc {
     if (_preferencesObserver) [NSNotificationCenter.defaultCenter removeObserver:_preferencesObserver];
+    [NSNotificationCenter.defaultCenter removeObserver:self name:SGLocalFileEditsDidChangeNotification object:nil];
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
@@ -67,6 +71,15 @@
     _walked = _begin(uri, state);
     if (!_walked) return;
     NSDictionary *metadata = [state.track.metadata isKindOfClass:NSDictionary.class] ? state.track.metadata : nil;
+    NSDictionary *edit = SGTrackEditFor(uri, metadata[@"album_uri"]);
+    NSString *customPath = SGTrackArtworkMotionPath(edit);
+    if (customPath && [NSFileManager.defaultManager fileExistsAtPath:customPath]) {
+        NSURL *customFile = [NSURL fileURLWithPath:customPath];
+        _source = @"custom";
+        _found(uri, customFile);
+        [self fetchAhead];
+        return;
+    }
     __weak SGMotionFollower *weakSelf = self;
     SGMotionClipFor(uri, canvas, state.track.artistName, metadata[@"album_title"], SGMotionTall, SGMotionPixels(), ^(NSURL *file, NSString *source) {
         SGMotionFollower *follower = weakSelf;
@@ -75,6 +88,14 @@
         follower->_found(uri, file);
         [follower fetchAhead];
     });
+}
+
+- (void)editsChanged:(NSNotification *)note {
+    SPTPlayerState *state = SGPlayerState();
+    NSString *albumURI = state.track.metadata[@"album_uri"];
+    if (![note.object isEqualToString:_track] && ![note.userInfo[@"albumURI"] isEqual:albumURI]) return;
+    _track = nil;
+    if (state) [self playerStateDidChange:state];
 }
 
 // The next track's clip, fetched into the store once, so a skip finds it there.

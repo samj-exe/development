@@ -1,5 +1,6 @@
 #import "Core/SGCore.h"
 #import "Shared/Player/PlayerEvents.h"
+#import "Shared/LocalFiles/LocalFiles.h"
 #import "SGRBridges.h"
 #import "SGRedesign.h"
 #import "SGRRestyle.h"
@@ -191,6 +192,25 @@ UIImage *SGRNowPlayingArtwork(NSString **trackURI, NSString **identity) {
 
 static SGRArtworkFollower *sg_follower;
 
+static void refreshEditedArtwork(NSNotification *note) {
+    SPTPlayerTrack *track = SGPlayerState().track;
+    NSString *uri = SGURIString(track.URI);
+    if (!uri) return;
+    NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
+    NSString *albumURI = metadata[@"album_uri"];
+    if (![note.object isEqual:uri] && ![note.userInfo[@"albumURI"] isEqual:albumURI]) return;
+
+    sg_wantedURI = nil;
+    sg_wantedKey = nil;
+    [sg_fetch cancel];
+    sg_fetch = nil;
+    followPlayer();
+
+    NSString *path = SGTrackArtworkCoverPath(SGTrackEditFor(uri, albumURI));
+    UIImage *cover = path ? [UIImage imageWithContentsOfFile:path] : nil;
+    if (cover) SGRSetNowPlayingArtwork(cover, uri, SGRArtworkQualityExact);
+}
+
 static char kBarCardKey, kBarImageKey;
 static __weak UIView *sg_barView;
 
@@ -297,6 +317,8 @@ void SGRObservePlayerTransition(id owner, void (^began)(id owner), void (^ended)
     SGAddPlayerStateObserver(sg_follower);
     sg_barWatcher = [SGRBarArtworkWatcher new];
     SGAddPlayerStateObserver(sg_barWatcher);
+    [NSNotificationCenter.defaultCenter addObserverForName:SGLocalFileEditsDidChangeNotification object:nil
+        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { refreshEditedArtwork(note); }];
     %init(SGRBarArtworkHooks);
     SGRequireClasses(@[@"_TtC18NowPlaying_BarImpl27NowPlayingBarViewController"]);
 }
