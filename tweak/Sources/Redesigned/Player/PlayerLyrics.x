@@ -56,14 +56,13 @@ static const CGFloat kLivingHeight = 200;
 // The lines on their own: the controls under them fade after this long without a touch.
 static const NSTimeInterval kRest = 4;
 
-static char kOverlayKey, kPlateKey, kTitleKey, kArtistKey, kStackKey;
+static char kOverlayKey, kPlateKey, kTitleKey, kStackKey;
 static BOOL sg_open;
 static BOOL sg_moving;                      // the transition is in flight, so no layout pass may re-place it
 static __weak UIView *sg_host;              // SPTNowPlayingView
 static __weak UIViewController *sg_info, *sg_duration, *sg_floating;
 static __weak UIView *sg_titleElement;      // the arranged element view holding the title and the artist
 static __weak UIViewController *sg_player;  // NowPlayingViewController, whose units the controls are
-static void refreshTrackLabels(void);
 static BOOL sg_alone;                       // the lines have the player to themselves
 static BOOL sg_touching;                    // a finger is on the player, which holds the clock (SGRPlayerTouchWatcher)
 static BOOL sg_singHolding;                 // Sing's open capsule or explanation holds the controls up
@@ -767,7 +766,6 @@ static void replace(void) {
         static dispatch_once_t once;
         dispatch_once(&once, ^{ SGLog(@"redesign player: the title rides on %@ %@", NSStringFromClass(element.class), NSStringFromCGRect(element.frame)); });
     }
-    refreshTrackLabels();
     replace();
 }
 %end
@@ -792,16 +790,6 @@ static void replace(void) {
 %end
 
 #pragma mark - the track changing under them
-
-static void refreshTrackLabels(void) {
-    UIView *info = sg_info.viewIfLoaded;
-    SPTPlayerTrack *track = SGPlayerState().track;
-    if (!info || !track) return;
-    UILabel *title = (UILabel *)SGRFindByIdentifier(info, @"now-playing-title-label", &kTitleKey);
-    UILabel *artist = (UILabel *)SGRFindByIdentifier(info, @"now-playing-subtitle-label", &kArtistKey);
-    title.text = track.trackTitle;
-    artist.text = track.artistName;
-}
 
 @interface SGRPlayerLyricsWatcher : NSObject <SGPlayerStateObserver>
 @end
@@ -829,7 +817,6 @@ static void refreshTrackLabels(void) {
     NSString *editedTrack = [note.object isKindOfClass:NSString.class] ? note.object : nil;
     NSString *editedAlbum = [note.userInfo[@"albumURI"] isKindOfClass:NSString.class] ? note.userInfo[@"albumURI"] : nil;
     if (![editedTrack isEqualToString:track] && ![editedAlbum isEqualToString:albumURI]) return;
-    refreshTrackLabels();
     SGRPlayerLyricsChanged();
 }
 
