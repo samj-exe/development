@@ -705,10 +705,15 @@ static void refreshPlayerInfoLabels(void) {
     if (!host) return;
     SPTPlayerTrack *track = SGPlayerState().track;
     if (!track) return;
+    NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSDictionary *edit = SGTrackEditFor(SGURIString(track.URI), albumURI);
+    NSString *titleText = [edit[@"title"] isKindOfClass:NSString.class] && ((NSString *)edit[@"title"]).length ? edit[@"title"] : track.trackTitle;
+    NSString *artistText = [edit[@"artist"] isKindOfClass:NSString.class] && ((NSString *)edit[@"artist"]).length ? edit[@"artist"] : track.artistName;
     UILabel *title = (UILabel *)SGRFindByIdentifier(host, @"now-playing-title-label", &kTitleKey);
     UILabel *artist = (UILabel *)SGRFindByIdentifier(host, @"now-playing-subtitle-label", &kArtistKey);
-    if ([title isKindOfClass:UILabel.class] && title.text.length && track.trackTitle.length && ![title.text isEqualToString:track.trackTitle]) title.text = track.trackTitle;
-    if ([artist isKindOfClass:UILabel.class] && track.artistName.length && ![artist.text isEqualToString:track.artistName]) artist.text = track.artistName;
+    if ([title isKindOfClass:UILabel.class] && titleText.length && ![title.text isEqualToString:titleText]) title.text = titleText;
+    if ([artist isKindOfClass:UILabel.class] && artistText.length && ![artist.text isEqualToString:artistText]) artist.text = artistText;
 }
 
 %hook UILabel
@@ -870,6 +875,8 @@ static void replace(void) {
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
+    refreshPlayerInfoLabels();
+    dispatch_async(dispatch_get_main_queue(), ^{ refreshPlayerInfoLabels(); });
     // A pause brings the controls back and keeps them; playing again starts the clock.
     if (state.isPaused) {
         setAlone(NO, YES);
@@ -906,6 +913,10 @@ static SGRPlayerLyricsWatcher *sg_watcher;
     %init;
     sg_watcher = [SGRPlayerLyricsWatcher new];
     SGAddPlayerStateObserver(sg_watcher);
+    [NSNotificationCenter.defaultCenter addObserverForName:SGLocalFileEditsDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+        refreshPlayerInfoLabels();
+        dispatch_async(dispatch_get_main_queue(), ^{ refreshPlayerInfoLabels(); });
+    }];
     // In the background the controls stay up; back in front the clock starts again.
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
         setAlone(NO, NO);

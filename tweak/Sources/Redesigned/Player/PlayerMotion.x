@@ -636,13 +636,13 @@ static NSString *currentLyricsBlurTrack(void) {
 }
 
 static void refreshLyricsBlurForTrack(NSString *track) {
-    if (!track.length || (sg_track.length && ![track isEqualToString:sg_track])) return;
+    NSString *currentTrack = SGURIString(SGPlayerState().track.URI) ?: sg_track;
+    if (!track.length || ![track isEqualToString:currentTrack]) return;
     BOOL blurred = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
     [sg_motion setBlurred:blurred animated:NO];
     SGRArtworkField *field = SGRPlayerField();
     [field setLyricsBlurred:blurred animated:NO];
-    // Apply once here; recreating the effect and re-running a fractional animator on layout/timer
-    // callbacks caused the visible flicker. Layout methods now preserve the current requested state.
+    SGRPlayerVisualiserUpdate();
 }
 
 BOOL SGRPlayerMotionLyricsBlurEnabled(void) {
@@ -718,10 +718,12 @@ static void show(NSString *track, NSURL *file) {
 }
 
 void SGRPlayerMotionLyricsChanged(void) {
-    BOOL blurred = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(currentLyricsBlurTrack());
-    [sg_motion setBlurred:blurred animated:sg_motion.window != nil];
+    NSString *track = currentLyricsBlurTrack();
+    BOOL blurred = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
+    [sg_motion setBlurred:blurred animated:NO];
     SGRArtworkField *field = SGRPlayerField();
-    [field setLyricsBlurred:blurred animated:field.window != nil];
+    [field setLyricsBlurred:blurred animated:NO];
+    SGRPlayerVisualiserUpdate();
 }
 
 static void videoSurface(id unit, BOOL attached) {
@@ -744,6 +746,8 @@ static BOOL beginTrack(NSString *track) {
     sg_begun++;
     BOOL blurLyrics = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
     [sg_motion setBlurred:blurLyrics animated:sg_motion.window != nil];
+    [SGRPlayerField() setLyricsBlurred:blurLyrics animated:NO];
+    SGRPlayerVisualiserUpdate();
     refreshLyricsBlurForTrack(track);
     // Read on every track, since the ⋯ menu switches it.
     BOOL wanted = SGRPlayerBackground() == SGRPlayerBackgroundAnimated && !videoShowing() && motionAllowed();

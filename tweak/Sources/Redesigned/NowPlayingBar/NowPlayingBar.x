@@ -195,11 +195,16 @@ static void restyleCardContent(UIView *card) {
     sg_cardContent = card;
     UIImage *customCover = customCardCover();
     SPTPlayerTrack *track = SGPlayerState().track;
-    if (track.trackTitle.length || track.artistName.length) {
+    if (track) {
+        NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
+        NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+        NSDictionary *edit = SGTrackEditFor(SGURIString(track.URI), albumURI);
+        NSString *titleText = [edit[@"title"] isKindOfClass:NSString.class] && ((NSString *)edit[@"title"]).length ? edit[@"title"] : track.trackTitle;
+        NSString *artistText = [edit[@"artist"] isKindOfClass:NSString.class] && ((NSString *)edit[@"artist"]).length ? edit[@"artist"] : track.artistName;
         UILabel *title = (UILabel *)SGRFindByIdentifier(card, @"now-playing-title-label", &kNowPlayingBarTitleKey);
         UILabel *artist = (UILabel *)SGRFindByIdentifier(card, @"now-playing-subtitle-label", &kNowPlayingBarArtistKey);
-        if ([title isKindOfClass:UILabel.class] && track.trackTitle.length && ![title.text isEqualToString:track.trackTitle]) title.text = track.trackTitle;
-        if ([artist isKindOfClass:UILabel.class] && track.artistName.length && ![artist.text isEqualToString:track.artistName]) artist.text = track.artistName;
+        if ([title isKindOfClass:UILabel.class] && titleText.length && ![title.text isEqualToString:titleText]) title.text = titleText;
+        if ([artist isKindOfClass:UILabel.class] && artistText.length && ![artist.text isEqualToString:artistText]) artist.text = artistText;
         // Some full cards have no identifiers. They still need the title line, never an artist as the title.
         if (!title || !artist) {
             NSMutableArray<UILabel *> *labels = [NSMutableArray array];
@@ -213,10 +218,10 @@ static void restyleCardContent(UIView *card) {
             }];
             if ([title isKindOfClass:UILabel.class]) {
                 // Identified title handled above.
-            } else if (track.trackTitle.length && labels.count > 0) labels.firstObject.text = track.trackTitle;
+            } else if (titleText.length && labels.count > 0) labels.firstObject.text = titleText;
             if ([artist isKindOfClass:UILabel.class]) {
                 // Identified artist handled above.
-            } else if (track.artistName.length && labels.count > 1) labels[1].text = track.artistName;
+            } else if (artistText.length && labels.count > 1) labels[1].text = artistText;
         }
     }
     if (customCover) {
@@ -642,6 +647,10 @@ static void styleNowPlayingBar(UIViewController *container) {
     }];
     sg_miniWatcher = [SGRMiniPlayerWatcher new];
     SGAddPlayerStateObserver(sg_miniWatcher);
+    [NSNotificationCenter.defaultCenter addObserverForName:SGLocalFileEditsDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+        refreshMini();
+        dispatch_async(dispatch_get_main_queue(), ^{ refreshMini(); });
+    }];
     sg_artworkObserver = [NSNotificationCenter.defaultCenter addObserverForName:SGRNowPlayingArtworkDidChangeNotification
                                                                           object:nil
                                                                            queue:NSOperationQueue.mainQueue
