@@ -83,8 +83,13 @@ static void resend(void) {
     }
     if (!info.count) return;
     NSMutableDictionary *now = [info mutableCopy];
-    NSString *artist = artistOf(SGPlayerState().track);
-    if (artist) now[MPMediaItemPropertyArtist] = artist;
+    SPTPlayerTrack *track = SGPlayerState().track;
+    NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
+    NSDictionary *edit = track ? SGTrackEditFor(SGURIString(track.URI), metadata[@"album_uri"]) : nil;
+    NSString *title = [edit[@"title"] isKindOfClass:NSString.class] && [edit[@"title"] length] ? edit[@"title"] : track.trackTitle;
+    if (title.length) now[MPMediaItemPropertyTitle] = title;
+    NSString *artist = [edit[@"artist"] isKindOfClass:NSString.class] && [edit[@"artist"] length] ? edit[@"artist"] : artistOf(track);
+    if (artist.length) now[MPMediaItemPropertyArtist] = artist;
     NSNumber *elapsed = info[MPNowPlayingInfoPropertyElapsedPlaybackTime];
     if (elapsed) {
         double rate = [info[MPNowPlayingInfoPropertyPlaybackRate] doubleValue];

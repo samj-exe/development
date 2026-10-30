@@ -18,6 +18,7 @@
 #import "SGFillClip.h"
 #import "SGMotionClip.h"
 #import "Shared/LockScreenLyrics/LockScreenLyrics.h"
+#import "Shared/LocalFiles/LocalFiles.h"
 #import "Shared/LockScreenLyrics/SGLyricsClip.h"
 #import "Shared/Player/NowPlayingExtras.h"
 #import "Shared/Player/PlayerState.h"
@@ -243,7 +244,9 @@ void SGLockMotionShowPlain(BOOL plain) {
             sg_lyricsFile = nil;
             sg_plainShown = NO;
             NSDictionary *metadata = [state.track.metadata isKindOfClass:NSDictionary.class] ? state.track.metadata : nil;
-            sg_title = state.track.trackTitle;
+            NSDictionary *edit = SGTrackEditFor(SGURIString(state.track.URI), metadata[@"album_uri"]);
+            NSString *customTitle = [edit[@"title"] isKindOfClass:NSString.class] ? edit[@"title"] : nil;
+            sg_title = customTitle.length ? customTitle : (state.track.trackTitle.length ? state.track.trackTitle : nil);
             sg_picture = pictureOf(state.track, metadata);
             sg_choice = SGLockScreenArtwork();
             sg_configuredChoice = sg_choice;

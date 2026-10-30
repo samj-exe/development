@@ -135,6 +135,8 @@ static CGFloat brightEnd(NSData *luminances) {
 - (void)setBlurred:(BOOL)blurred animated:(BOOL)animated;
 @end
 
+static void refreshLyricsBlurForTrack(NSString *track);
+
 @implementation SGRPlayerMotionView {
     AVQueuePlayer *_player;
     AVPlayerLooper *_looper;
@@ -241,9 +243,6 @@ static UIViewPropertyAnimator *setBlurIntensity(UIVisualEffectView *view, UIView
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     NSString *track = SGURIString(state.track.URI) ?: currentLyricsBlurTrack();
-    BOOL blurred = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
-    [self setBlurred:blurred animated:self.window != nil];
-    [SGRPlayerField() setLyricsBlurred:blurred animated:self.window != nil];
     if (track.length) refreshLyricsBlurForTrack(track);
     [self updateMotion];
 }
@@ -362,9 +361,7 @@ static UIViewPropertyAnimator *setBlurIntensity(UIVisualEffectView *view, UIView
     SGRAnimate(SGRMotionFade, ^{
         self->_picture.alpha = 0;
         self->_seamUp = NO;
-        self->_lyricsUp = NO;
         self->_seamBlurAnimator = setBlurIntensity(self->_seamBlur, self->_seamBlurAnimator, 0);
-        self->_lyricsBlurAnimator = setBlurIntensity(self->_lyricsBlur, self->_lyricsBlurAnimator, 0);
     }, ^(BOOL finished) { done(); });
 }
 
@@ -639,7 +636,7 @@ static NSString *currentLyricsBlurTrack(void) {
 }
 
 static void refreshLyricsBlurForTrack(NSString *track) {
-    if (![track isEqualToString:sg_track] || ![track isEqualToString:currentLyricsBlurTrack()]) return;
+    if (!track.length || (sg_track.length && ![track isEqualToString:sg_track])) return;
     BOOL blurred = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
     [sg_motion setBlurred:blurred animated:NO];
     SGRArtworkField *field = SGRPlayerField();

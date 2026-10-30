@@ -13,7 +13,7 @@
 #import <objc/runtime.h>
 
 static const CGFloat kCardRadius = 24;
-static char kGlassKey, kProgressViewKey, kProgressAlphaKey;
+static char kGlassKey, kProgressViewKey, kProgressAlphaKey, kNowPlayingBarTitleKey, kNowPlayingBarArtistKey;
 static __weak UIVisualEffectView *sg_cardGlass;
 static __weak UIView *sg_cardArtwork;
 static __weak UIView *sg_cardContent;
@@ -195,23 +195,34 @@ static void restyleCardContent(UIView *card) {
     UIImage *customCover = customCardCover();
     SPTPlayerTrack *track = SGPlayerState().track;
     if (track.trackTitle.length || track.artistName.length) {
-        NSMutableArray<UILabel *> *labels = [NSMutableArray array];
-        SGForEachView(card, ^(UIView *v) {
-            if ([v isKindOfClass:UILabel.class] && v.window && ((UILabel *)v).text.length) [labels addObject:(UILabel *)v];
-        });
-        [labels sortUsingComparator:^NSComparisonResult(UILabel *a, UILabel *b) {
-            CGRect af = [a convertRect:a.bounds toView:card];
-            CGRect bf = [b convertRect:b.bounds toView:card];
-            return af.origin.y < bf.origin.y ? NSOrderedAscending : (af.origin.y > bf.origin.y ? NSOrderedDescending : NSOrderedSame);
-        }];
-        if (track.trackTitle.length && labels.count > 0 && ![labels.firstObject.text isEqualToString:track.trackTitle]) labels.firstObject.text = track.trackTitle;
-        if (track.artistName.length && labels.count > 1 && ![labels[1].text isEqualToString:track.artistName]) labels[1].text = track.artistName;
+        UILabel *title = (UILabel *)SGRFindByIdentifier(card, @"now-playing-title-label", &kNowPlayingBarTitleKey);
+        UILabel *artist = (UILabel *)SGRFindByIdentifier(card, @"now-playing-subtitle-label", &kNowPlayingBarArtistKey);
+        if ([title isKindOfClass:UILabel.class] && track.trackTitle.length && ![title.text isEqualToString:track.trackTitle]) title.text = track.trackTitle;
+        if ([artist isKindOfClass:UILabel.class] && track.artistName.length && ![artist.text isEqualToString:track.artistName]) artist.text = track.artistName;
+        // Some full cards have no identifiers. They still need the title line, never an artist as the title.
+        if (!title || !artist) {
+            NSMutableArray<UILabel *> *labels = [NSMutableArray array];
+            SGForEachView(card, ^(UIView *v) {
+                if ([v isKindOfClass:UILabel.class] && v.window && ((UILabel *)v).text.length) [labels addObject:(UILabel *)v];
+            });
+            [labels sortUsingComparator:^NSComparisonResult(UILabel *a, UILabel *b) {
+                CGRect af = [a convertRect:a.bounds toView:card];
+                CGRect bf = [b convertRect:b.bounds toView:card];
+                return af.origin.y < bf.origin.y ? NSOrderedAscending : (af.origin.y > bf.origin.y ? NSOrderedDescending : NSOrderedSame);
+            }];
+            if ([title isKindOfClass:UILabel.class]) {
+                // Identified title handled above.
+            } else if (track.trackTitle.length && labels.count > 0) labels.firstObject.text = track.trackTitle;
+            if ([artist isKindOfClass:UILabel.class]) {
+                // Identified artist handled above.
+            } else if (track.artistName.length && labels.count > 1) labels[1].text = track.artistName;
+        }
     }
     if (customCover) {
         SGForEachView(card, ^(UIView *v) {
             if ([v isKindOfClass:UIImageView.class]) {
                 UIImageView *image = (UIImageView *)v;
-                if (CGRectGetWidth(image.bounds) >= 36 && CGRectGetWidth(image.bounds) <= 120) {
+                if (CGRectGetWidth(image.bounds) >= 36 && CGRectGetWidth(image.bounds) <= 500) {
                     image.image = customCover;
                     image.contentMode = UIViewContentModeScaleAspectFill;
                     image.clipsToBounds = YES;

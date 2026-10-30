@@ -711,6 +711,23 @@ static void refreshPlayerInfoLabels(void) {
     if ([artist isKindOfClass:UILabel.class] && track.artistName.length && ![artist.text isEqualToString:track.artistName]) artist.text = track.artistName;
 }
 
+%hook UILabel
+- (void)setText:(NSString *)text {
+    NSString *identifier = self.accessibilityIdentifier;
+    if ([identifier isEqualToString:@"now-playing-title-label"] || [identifier isEqualToString:@"now-playing-subtitle-label"] ) {
+        SPTPlayerTrack *track = SGPlayerState().track;
+        NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
+        NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+        NSDictionary *edit = track ? SGTrackEditFor(SGURIString(track.URI), albumURI) : nil;
+        NSString *custom = [identifier isEqualToString:@"now-playing-title-label"] ? edit[@"title"] : edit[@"artist"];
+        if ([custom isKindOfClass:NSString.class] && custom.length) text = custom;
+        else if ([identifier isEqualToString:@"now-playing-title-label"] && track.trackTitle.length) text = track.trackTitle;
+        else if ([identifier isEqualToString:@"now-playing-subtitle-label"] && track.artistName.length) text = track.artistName;
+    }
+    %orig(text);
+}
+%end
+
 // A layout pass, a new track or a turn of the phone: the state is put back where it belongs without
 // animating, since the frames it is measured from have just changed.
 static void replace(void) {
