@@ -6,11 +6,20 @@
 #import "Core/SGCore.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Player/PlayerState.h"
-#import "SLNativeBar.h"
 
 NSNotificationName const SLLocalPlayerDidChangeNotification = @"spotifyglass.lossless.localPlayerDidChange";
 
 static _Atomic bool sg_online = true;
+static _Atomic bool sg_virtual_state = false;
+
+static void SLVirtualBypass(BOOL active) {
+    atomic_store(&sg_virtual_state, active);
+}
+
+static BOOL SLVirtualStateIs(SPTPlayerState *state) {
+    (void)state;
+    return atomic_load(&sg_virtual_state);
+}
 
 @interface SLLocalPlayer () <AVAudioPlayerDelegate, SGPlayerStateObserver>
 @end
