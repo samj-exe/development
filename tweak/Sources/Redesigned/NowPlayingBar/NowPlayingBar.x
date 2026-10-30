@@ -13,6 +13,8 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
+UIView *SGRFindByIdentifier(UIView *root, NSString *identifier, const void *cacheKey);
+
 static const CGFloat kCardRadius = 24;
 static char kGlassKey, kProgressViewKey, kProgressAlphaKey, kNowPlayingBarTitleKey, kNowPlayingBarArtistKey;
 static __weak UIVisualEffectView *sg_cardGlass;

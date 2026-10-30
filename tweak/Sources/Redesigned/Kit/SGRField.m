@@ -176,6 +176,7 @@ static const CGFloat kLyricsBlur = 0.3;
     [CATransaction setDisableActions:YES];
     _solid.frame = painted;
     _lyricsBlur.frame = painted;
+    if (_lyricsBlur) [self bringSubviewToFront:_lyricsBlur];
     CGFloat height = windowHeight(self), total = MAX(1, painted.size.height);
     CGFloat from = height * kBlackFrom + bleed.top;
     CGFloat to = MAX(from + 1, height * kBlackTo + bleed.top);

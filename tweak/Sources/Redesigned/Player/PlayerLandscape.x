@@ -202,8 +202,12 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     if (!state) return;
-    _title.text = state.track.trackTitle;
-    _artist.text = state.track.artistName;
+    NSDictionary *metadata = [state.track.metadata isKindOfClass:NSDictionary.class] ? state.track.metadata : nil;
+    NSDictionary *edit = SGTrackEditFor(SGURIString(state.track.URI), metadata[@"album_uri"]);
+    NSString *title = edit[@"title"];
+    NSString *artist = edit[@"artist"];
+    _title.text = [title isKindOfClass:NSString.class] && title.length ? title : state.track.trackTitle;
+    _artist.text = [artist isKindOfClass:NSString.class] && artist.length ? artist : state.track.artistName;
     [_play setImage:[UIImage systemImageNamed:state.isPaused ? @"play.fill" : @"pause.fill" withConfiguration:
         [UIImageSymbolConfiguration configurationWithPointSize:30 weight:UIImageSymbolWeightBold]] forState:UIControlStateNormal];
     _play.accessibilityLabel = state.isPaused ? @"Play" : @"Pause";

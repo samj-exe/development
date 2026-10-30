@@ -242,7 +242,7 @@ static UIViewPropertyAnimator *setBlurIntensity(UIVisualEffectView *view, UIView
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
-    NSString *track = SGURIString(state.track.URI) ?: currentLyricsBlurTrack();
+    NSString *track = currentLyricsBlurTrack() ?: SGURIString(state.track.URI);
     if (track.length) refreshLyricsBlurForTrack(track);
     [self updateMotion];
 }
@@ -269,6 +269,7 @@ static UIViewPropertyAnimator *setBlurIntensity(UIVisualEffectView *view, UIView
     if (_aspect > kCanvasAspect) height = MAX(height, screen);
     CGFloat seam = round(height * kFootFrom), blurFrom = MIN(seam, round(screen * kBlurByControls));
     _picture.frame = bounds;
+    if (_lyricsBlur) [self bringSubviewToFront:_lyricsBlur];
     _seamBlur.frame = bounds;
     _seamBlur.maskView.frame = bounds;
     _lyricsBlur.frame = bounds;
@@ -632,12 +633,11 @@ static BOOL lyricsBlurEnabledForTrack(NSString *track) {
 }
 
 static NSString *currentLyricsBlurTrack(void) {
-    return SGURIString(SGPlayerState().track.URI) ?: sg_track;
+    return sg_track.length ? sg_track : (SGURIString(SGPlayerState().track.URI) ?: nil);
 }
 
 static void refreshLyricsBlurForTrack(NSString *track) {
-    NSString *currentTrack = SGURIString(SGPlayerState().track.URI) ?: sg_track;
-    if (!track.length || ![track isEqualToString:currentTrack]) return;
+    if (!track.length) return;
     BOOL blurred = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
     [sg_motion setBlurred:blurred animated:NO];
     SGRArtworkField *field = SGRPlayerField();
@@ -745,7 +745,7 @@ static BOOL beginTrack(NSString *track) {
     sg_track = track;
     sg_begun++;
     BOOL blurLyrics = SGRPlayerLyricsOpen() && lyricsBlurEnabledForTrack(track);
-    [sg_motion setBlurred:blurLyrics animated:sg_motion.window != nil];
+    [sg_motion setBlurred:blurLyrics animated:NO];
     [SGRPlayerField() setLyricsBlurred:blurLyrics animated:NO];
     SGRPlayerVisualiserUpdate();
     refreshLyricsBlurForTrack(track);

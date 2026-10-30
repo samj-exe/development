@@ -27,9 +27,15 @@ static const CGFloat kSkipGlyphSize = 32, kPlayGlyphSize = 44;
 // A spinner that is still up this long after a state change is buffering, not a track starting.
 static const NSTimeInterval kSpinnerCheck = 0.6;
 
+// After a tap the glyph shows what the tap asked for, and a state still saying the opposite is taken for
+// one sent before the player caught up, for this long; after it the player's word is final.
+static const NSTimeInterval kTapTrust = 1.2;
+
 static char kPreviousKey, kNextKey, kPlayKey, kGlyphKey, kTakeKey, kRemainingKey;
 static __weak UIView *sg_playView;
 static __weak UIButton *sg_playButton;
+static CFTimeInterval sg_tappedUntil;
+static BOOL sg_tappedPaused;
 static __weak SGRGlyphView *sg_playGlyph;
 static __weak UIView *sg_controlsHost;
 
@@ -107,18 +113,24 @@ static void refreshPlayGlyph(BOOL animated) {
     SPTPlayerState *state = SGPlayerState();
     if (!glyph || !state) return;
     glyph.alpha = spinnerShowing(sg_playButton) ? 0 : 1;
+    CFTimeInterval now = CACurrentMediaTime();
+    if (now < sg_tappedUntil) {
+        if (state.isPaused != sg_tappedPaused) return;
+        sg_tappedUntil = 0;
+    }
     [glyph setSymbol:symbolFor(state.isPaused) animated:animated];
 }
 
-// Refresh only from the player's current authoritative state. There is deliberately no optimistic
-// glyph state: a stale trust window is what left the control frozen after failed or delayed state updates.
+// The player's state reaches the glyph a beat after the tap (the request goes through the player core
+// and comes back as a state), which read as a slow button; Spotify's own disc turns at the touch. So the
+// glyph turns at the touch too, to the opposite of what it shows, and the state settles it after.
 static void playTapped(void) {
-    NSArray *delays = @[ @0.05, @0.20, @0.50 ];
-    for (NSNumber *delay in delays) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            refreshPlayGlyph(YES);
-        });
-    }
+    SGRGlyphView *glyph = sg_playGlyph;
+    if (!glyph || glyph.alpha == 0) return;
+    sg_tappedPaused = ![glyph.symbol isEqualToString:@"play.fill"];
+    sg_tappedUntil = CACurrentMediaTime() + kTapTrust;
+    [glyph setSymbol:symbolFor(sg_tappedPaused) animated:YES];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kTapTrust * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ refreshPlayGlyph(YES); });
 }
 
 static void playGlyph(UIView *host) {

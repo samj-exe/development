@@ -244,8 +244,6 @@ static CAGradientLayer *fill(CAShapeLayer *shape) {
 - (void)disappear:(void (^)(void))done {
     SGRAnimate(SGRMotionFade, ^{
         self->_content.alpha = 0;
-        self->_lyricsRequested = NO;
-        self->_lyricsBlurAnimator = setBlurIntensity(self->_lyricsBlur, self->_lyricsBlurAnimator, 0);
     }, ^(BOOL finished) { done(); });
 }
 
@@ -267,6 +265,8 @@ static CAGradientLayer *fill(CAShapeLayer *shape) {
 #pragma mark - moving
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
+    BOOL blurred = SGRPlayerLyricsOpen() && SGRPlayerMotionLyricsBlurEnabled();
+    if (blurred != _lyricsRequested) [self setBlurred:blurred animated:NO];
     [self updateMotion];
 }
 
