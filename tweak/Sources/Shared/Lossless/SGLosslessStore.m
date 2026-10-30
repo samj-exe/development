@@ -1,4 +1,4 @@
-﻿#import "SGLosslessStore.h"
+#import "SGLosslessStore.h"
 #import <AudioToolbox/AudioToolbox.h>
 
 static NSString *const kIndex = @".index.plist";   // track URI -> file name

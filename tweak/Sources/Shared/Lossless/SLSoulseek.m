@@ -1,4 +1,4 @@
-﻿// SLSoulseek.m — the Lossless downloader: a small Soulseek client. It logs in to the Soulseek server with the
+// SLSoulseek.m — the Lossless downloader: a small Soulseek client. It logs in to the Soulseek server with the
 // account saved in Mod Settings > Soulseek account, searches the network for the song, ranks the FLAC / ALAC
 // files peers offer (colon3's TrackMatcher.score, trimmed), asks the best peer for the file, waits in its queue
 // and saves the transfer in Documents/Lossless.

@@ -1,4 +1,4 @@
-﻿// A single Lossless download row lives in Spotify's context-menu footer.
+// A single Lossless download row lives in Spotify's context-menu footer.
 #import <UIKit/UIKit.h>
 
 static NSString *const kSGLosslessFooterID = @"SGLosslessFooter";

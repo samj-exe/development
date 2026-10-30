@@ -1,4 +1,4 @@
-﻿#import <Foundation/Foundation.h>
+#import <Foundation/Foundation.h>
 
 NS_ASSUME_NONNULL_BEGIN
 // Documents/Lossless: FLAC and ALAC files, put there by the user or downloaded. A file goes with the Spotify track

@@ -1,4 +1,4 @@
-﻿#import "SLDownloadToast.h"
+#import "SLDownloadToast.h"
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
 

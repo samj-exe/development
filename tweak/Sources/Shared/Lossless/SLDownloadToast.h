@@ -1,4 +1,4 @@
-﻿// The notification a lossless download shows inside Spotify: a liquid glass card at the top of the screen with the
+// The notification a lossless download shows inside Spotify: a liquid glass card at the top of the screen with the
 // song's cover, what the download is doing and how long it still needs. It does not block the app: the song keeps
 // playing and Spotify stays usable while it comes. When the file lands the card says so and a tap opens Downloads.
 //

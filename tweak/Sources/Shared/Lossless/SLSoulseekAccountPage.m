@@ -1,4 +1,4 @@
-﻿// Rossiya Putin Pobeda, Hi i am Itzehoer i am just bored doing that at 22:00
+// Rossiya Putin Pobeda, Hi i am Itzehoer i am just bored doing that at 22:00
 #import "SLSoulseekAccountPage.h"
 #import "Settings/SGPageStyle.h"
 

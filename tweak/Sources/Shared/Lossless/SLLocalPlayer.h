@@ -1,4 +1,4 @@
-﻿// Plays a downloaded file by itself, with no network: the file, its title, artist and cover are all on the phone.
+// Plays a downloaded file by itself, with no network: the file, its title, artist and cover are all on the phone.
 // Spotify cannot stream a song with no connection, and the Lossless engine plays the file only on top of Spotify's
 // own sound, so offline (or for a file that is not linked to a Spotify song) the Downloads page plays the file
 // here: AVAudioPlayer, with the lock screen's now playing card and its buttons. Spotify is paused first, and this

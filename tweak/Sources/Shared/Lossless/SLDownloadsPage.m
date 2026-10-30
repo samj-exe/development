@@ -1,4 +1,4 @@
-﻿#import "SLDownloadsPage.h"
+#import "SLDownloadsPage.h"
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
 #import "Shared/Navigation/Links.h"

@@ -1,4 +1,4 @@
-﻿#import "SLLocalPlayer.h"
+#import "SLLocalPlayer.h"
 #import <AVFoundation/AVFoundation.h>
 #import <MediaPlayer/MediaPlayer.h>
 #import <Network/Network.h>

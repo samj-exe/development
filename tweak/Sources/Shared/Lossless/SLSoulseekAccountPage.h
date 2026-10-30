@@ -1,4 +1,4 @@
-﻿#import <UIKit/UIKit.h>
+#import <UIKit/UIKit.h>
 #import "Settings/SGPage.h"
 
 NS_ASSUME_NONNULL_BEGIN

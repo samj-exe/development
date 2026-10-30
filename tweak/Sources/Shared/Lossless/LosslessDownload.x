@@ -1,4 +1,4 @@
-﻿// Lossless, in Spotify's ⋯ menu: a row "Download lossless" that fetches the FLAC or ALAC of the playing track from
+// Lossless, in Spotify's ⋯ menu: a row "Download lossless" that fetches the FLAC or ALAC of the playing track from
 // Soulseek (SLSoulseek.m: a small Soulseek client that signs in with the account saved in Mod Settings >
 // Soulseek account). The file lands in Documents/Lossless (SGLosslessStore.h), where the engine finds it by title
 // and length and plays it in place of Spotify's stream (Lossless.x). It goes to Lossless, never to the lossy
