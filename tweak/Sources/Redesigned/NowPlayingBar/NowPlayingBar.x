@@ -2,6 +2,7 @@
 #import "Redesigned/Kit/SGRRepaint.h"
 #import "Redesigned/Kit/SGRTokens.h"
 #import "Redesigned/Kit/SGRBridges.h"
+#import "Redesigned/Kit/SGRRestyle.h"
 #import "Redesigned/Navbar/Navbar.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LocalFiles/LocalFiles.h"
