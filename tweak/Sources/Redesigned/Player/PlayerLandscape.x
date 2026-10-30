@@ -14,6 +14,7 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LocalFiles/LocalFiles.h"
 #import "Shared/Player/PlayerState.h"
 #import "Player.h"
 
