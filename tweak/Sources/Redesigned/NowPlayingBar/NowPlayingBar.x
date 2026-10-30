@@ -4,6 +4,7 @@
 #import "Redesigned/Kit/SGRBridges.h"
 #import "Redesigned/Navbar/Navbar.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LocalFiles/LocalFiles.h"
 #import "Shared/Player/NowPlayingExtras.h"
 #import "Shared/Player/PlayerEvents.h"
 #import "Shared/Player/PlayerState.h"
@@ -178,9 +179,46 @@ static void ensureMiniProgress(UIView *card) {
     }
 }
 
+static UIImage *customCardCover(void) {
+    SPTPlayerTrack *track = SGPlayerState().track;
+    NSString *uri = SGURIString(track.URI);
+    if (!uri.length) return nil;
+    NSDictionary *metadata = [track respondsToSelector:@selector(metadata)] ? track.metadata : nil;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSString *path = SGTrackArtworkCoverPath(SGTrackEditFor(uri, albumURI));
+    return path.length ? [UIImage imageWithContentsOfFile:path] : nil;
+}
+
 static void restyleCardContent(UIView *card) {
     if (!card || !SGIsInside(card, sgr_nowPlayingRoot)) return;
     sg_cardContent = card;
+    UIImage *customCover = customCardCover();
+    SPTPlayerTrack *track = SGPlayerState().track;
+    if (track.trackTitle.length || track.artistName.length) {
+        NSMutableArray<UILabel *> *labels = [NSMutableArray array];
+        SGForEachView(card, ^(UIView *v) {
+            if ([v isKindOfClass:UILabel.class] && v.window && ((UILabel *)v).text.length) [labels addObject:(UILabel *)v];
+        });
+        [labels sortUsingComparator:^NSComparisonResult(UILabel *a, UILabel *b) {
+            CGRect af = [a convertRect:a.bounds toView:card];
+            CGRect bf = [b convertRect:b.bounds toView:card];
+            return af.origin.y < bf.origin.y ? NSOrderedAscending : (af.origin.y > bf.origin.y ? NSOrderedDescending : NSOrderedSame);
+        }];
+        if (track.trackTitle.length && labels.count > 0 && ![labels.firstObject.text isEqualToString:track.trackTitle]) labels.firstObject.text = track.trackTitle;
+        if (track.artistName.length && labels.count > 1 && ![labels[1].text isEqualToString:track.artistName]) labels[1].text = track.artistName;
+    }
+    if (customCover) {
+        SGForEachView(card, ^(UIView *v) {
+            if ([v isKindOfClass:UIImageView.class]) {
+                UIImageView *image = (UIImageView *)v;
+                if (CGRectGetWidth(image.bounds) >= 36 && CGRectGetWidth(image.bounds) <= 120) {
+                    image.image = customCover;
+                    image.contentMode = UIViewContentModeScaleAspectFill;
+                    image.clipsToBounds = YES;
+                }
+            }
+        });
+    }
     SGForEachView(card, ^(UIView *v) {
         CGSize size = v.bounds.size;
         BOOL square = size.width >= 36 && size.width <= 48 && fabs(size.width - size.height) < 1;
@@ -388,6 +426,8 @@ static UIImage *cardCover(void) {
 
 static UIImage *currentCover(void) {
     SPTPlayerState *state = SGPlayerState();
+    UIImage *custom = customCardCover();
+    if (custom) return custom;
     NSString *artworkTrack = nil;
     UIImage *artwork = SGRNowPlayingArtwork(&artworkTrack, NULL);
     if (artwork && [artworkTrack isEqualToString:SGURIString(state.track.URI)]) return artwork;

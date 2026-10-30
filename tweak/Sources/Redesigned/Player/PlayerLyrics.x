@@ -56,7 +56,7 @@ static const CGFloat kLivingHeight = 200;
 // The lines on their own: the controls under them fade after this long without a touch.
 static const NSTimeInterval kRest = 4;
 
-static char kOverlayKey, kPlateKey, kTitleKey, kStackKey;
+static char kOverlayKey, kPlateKey, kTitleKey, kArtistKey, kStackKey;
 static BOOL sg_open;
 static BOOL sg_moving;                      // the transition is in flight, so no layout pass may re-place it
 static __weak UIView *sg_host;              // SPTNowPlayingView
@@ -699,10 +699,23 @@ void SGRPlayerToggleLyrics(void) {
     setOpen(!sg_open, YES);
 }
 
+static void refreshPlayerInfoLabels(void) {
+    UIView *host = sg_host;
+    if (!host) host = sg_info.viewIfLoaded;
+    if (!host) return;
+    SPTPlayerTrack *track = SGPlayerState().track;
+    if (!track) return;
+    UILabel *title = (UILabel *)SGRFindByIdentifier(host, @"now-playing-title-label", &kTitleKey);
+    UILabel *artist = (UILabel *)SGRFindByIdentifier(host, @"now-playing-subtitle-label", &kArtistKey);
+    if ([title isKindOfClass:UILabel.class] && title.text.length && track.trackTitle.length && ![title.text isEqualToString:track.trackTitle]) title.text = track.trackTitle;
+    if ([artist isKindOfClass:UILabel.class] && track.artistName.length && ![artist.text isEqualToString:track.artistName]) artist.text = track.artistName;
+}
+
 // A layout pass, a new track or a turn of the phone: the state is put back where it belongs without
 // animating, since the frames it is measured from have just changed.
 static void replace(void) {
     UIView *host = sg_host;
+    refreshPlayerInfoLabels();
     if (!host || sg_moving) return;   // a pass in the middle of the transition would cut it short
     SGRLyricsLayout l = layoutIn(host);
     if (sg_open && !l.ok) return;

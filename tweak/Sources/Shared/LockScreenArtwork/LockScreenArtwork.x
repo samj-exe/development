@@ -7,6 +7,7 @@
 #import "Headers/SPTPlayer.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Player/PlayerState.h"
+#import "Shared/LocalFiles/LocalFiles.h"
 
 static NSString *const kCanvazAddress = @"https://spclient.wg.spotify.com/canvaz-cache/v0/canvases";
 
@@ -21,6 +22,7 @@ static NSString *sg_wanted;
 static NSString *sg_playing;   // the source the artwork set for sg_wanted came from
 static NSString *sg_offered;
 static CGFloat sg_aspect;
+static BOOL sg_forceResolve;
 
 static UIImage *coverImage(CGSize size) {
     MPMediaItemArtwork *cover;
@@ -196,7 +198,9 @@ static void resolve(SPTPlayerTrack *track) {
     // Pause, shuffle and the like report the same track again; only metadata that landed late is news.
     static BOOL fromMetadata;
     BOOL same = uri == sg_wanted || [uri isEqualToString:sg_wanted];
-    if (same && (fromMetadata || !canvas)) return;
+    BOOL force = sg_forceResolve;
+    sg_forceResolve = NO;
+    if (same && !force && (fromMetadata || !canvas)) return;
     fromMetadata = canvas != nil;
     NSArray<NSString *> *order = SGArtworkOrder();
     // A Canvas landing late is no news with Spotify off, or with a source asked before it already playing.
@@ -217,6 +221,27 @@ static void resolve(SPTPlayerTrack *track) {
 @end
 
 @implementation SGArtworkWatcher
+- (instancetype)init {
+    if (!(self = [super init])) return nil;
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(editsChanged:) name:SGLocalFileEditsDidChangeNotification object:nil];
+    return self;
+}
+- (void)editsChanged:(NSNotification *)note {
+    SPTPlayerState *state = SGPlayerState();
+    NSString *track = SGURIString(state.track.URI);
+    NSString *editedTrack = [note.object isKindOfClass:NSString.class] ? note.object : nil;
+    NSDictionary *metadata = [state.track.metadata isKindOfClass:NSDictionary.class] ? state.track.metadata : nil;
+    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
+    NSString *editedAlbum = [note.userInfo[@"albumURI"] isKindOfClass:NSString.class] ? note.userInfo[@"albumURI"] : nil;
+    if (![editedTrack isEqualToString:track] && ![editedAlbum isEqualToString:albumURI]) return;
+    NSDictionary *edit = SGTrackEditFor(track, albumURI);
+    BOOL artworkChanged = SGTrackArtworkCoverPath(edit) || SGTrackArtworkMotionPath(edit);
+    if (artworkChanged) {
+        sg_forceResolve = YES;
+        resolve(state.track);
+    }
+    resend();
+}
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     static NSString *seen;
     NSString *uri = SGURIString(state.track.URI);

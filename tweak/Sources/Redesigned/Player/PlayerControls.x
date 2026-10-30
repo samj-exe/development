@@ -127,7 +127,9 @@ static void refreshPlayGlyph(BOOL animated) {
 static void playTapped(void) {
     SGRGlyphView *glyph = sg_playGlyph;
     if (!glyph || glyph.alpha == 0) return;
-    sg_tappedPaused = ![glyph.symbol isEqualToString:@"play.fill"];
+    SPTPlayerState *state = SGPlayerState();
+    BOOL currentPaused = state ? state.isPaused : [glyph.symbol isEqualToString:@"play.fill"];
+    sg_tappedPaused = !currentPaused;
     sg_tappedUntil = CACurrentMediaTime() + kTapTrust;
     [glyph setSymbol:symbolFor(sg_tappedPaused) animated:YES];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kTapTrust * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ refreshPlayGlyph(YES); });
