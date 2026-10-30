@@ -239,9 +239,13 @@ static NSString *slSize(unsigned long long bytes) {
     [self.tableView reloadData];
     __weak SLDownloadsPage *weak = self;
     SLSearchSoulseek(query, ^(NSArray<NSDictionary *> *results, NSString *error) {
-        weak->_searchResults = results;
-        weak->_searchStatus.text = error ?: (results.count ? [NSString stringWithFormat:@"%lu results", (unsigned long)results.count] : @"No lossless results found");
-        [weak.tableView reloadData];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SLDownloadsPage *strong = weak;
+            if (!strong) return;
+            strong->_searchResults = results;
+            strong->_searchStatus.text = error ?: (results.count ? [NSString stringWithFormat:@"%lu results", (unsigned long)results.count] : @"No lossless results found");
+            [strong.tableView reloadData];
+        });
     });
     return YES;
 }
@@ -429,14 +433,18 @@ static NSString *slSize(unsigned long long bytes) {
     [self.tableView reloadData];
     __weak SLDownloadsPage *weak = self;
     SLDownloadLossless(title, artist, duration, nil, ^(NSURL *path, NSString *error) {
-        if (path && weak->_overwrite.on) {
-            SPTPlayerState *state = SGPlayerState();
-            NSString *uri = SGURIString(state.track.URI);
-            if (uri.length) SGLosslessStoreSetInfo(path.lastPathComponent, @{ @"uri": uri, @"title": title, @"artist": artist });
-        }
-        weak->_searchStatus.text = path ? [NSString stringWithFormat:@"Downloaded %@", title] : (error ?: @"Download failed");
-        [NSUserDefaults.standardUserDefaults setBool:YES forKey:SGKeyLossless];
-        [weak reloadFiles];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SLDownloadsPage *strong = weak;
+            if (!strong) return;
+            if (path && strong->_overwrite.on) {
+                SPTPlayerState *state = SGPlayerState();
+                NSString *uri = SGURIString(state.track.URI);
+                if (uri.length) SGLosslessStoreSetInfo(path.lastPathComponent, @{ @"uri": uri, @"title": title, @"artist": artist });
+            }
+            strong->_searchStatus.text = path ? [NSString stringWithFormat:@"Downloaded %@", title] : (error ?: @"Download failed");
+            [NSUserDefaults.standardUserDefaults setBool:YES forKey:SGKeyLossless];
+            [strong reloadFiles];
+        });
     });
 }
 
