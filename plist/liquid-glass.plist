@@ -28,5 +28,9 @@
 	</array>
 	<key>NSMotionUsageDescription</key>
 	<string>Head gestures, spatial voice and motion-reactive effects use motion to respond to how you move.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Stream the current Spotify album artwork to an iDotMatrix display over Bluetooth.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Connect to an iDotMatrix display and stream the current Spotify album artwork.</string>
 </dict>
 </plist>

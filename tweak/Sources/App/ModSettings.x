@@ -24,6 +24,7 @@
 #import "Shared/HeadGestures/HeadGestures.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/Downloads/Downloads.h"
+#import "Shared/Matrix/MatrixDisplay.h"
 #import "Shared/Lossless/SLDownloadsPage.h"
 #import "Shared/ListeningStats/ListeningStats.h"
 #import "App/About/About.h"
@@ -287,7 +288,8 @@ static UIViewController *miscSettingsPage(void) {
         SGWithSymbol(hideSigning, @"lock.slash"),
         SGWithSymbol(hideDiscord, @"bubble.left.and.bubble.right"),
     ]);
-    return [[SGModPage alloc] initWithTitle:@"Misc" intro:SGRestartNote sections:@[banners] footer:nil];
+    SGModSection *devices = SGSection(@"Displays", @[SGWithSymbol(pageRow(@"iDotMatrix", @"dot.radiowaves.left.and.right", ^UIViewController *{ return SGMatrixSettingsPage(); }), @"dot.radiowaves.left.and.right")]);
+    return [[SGModPage alloc] initWithTitle:@"Misc" intro:SGRestartNote sections:@[banners, devices] footer:nil];
 }
 
 static UIViewController *modSettingsPage(void) {
