@@ -617,10 +617,12 @@ static SGRPlayerMenuItem *lyricsSourceItem(SGRPlayerMenuTakeover *takeover) {
     return item;
 }
 
-static SGRPlayerMenuItem *downloadItem(void) {
+static SGRPlayerMenuItem *downloadItem(SGRPlayerMenuTakeover *takeover) {
     SGRPlayerMenuItem *item = [SGRPlayerMenuItem itemWithTitle:@"Download" image:symbol(@"arrow.down.circle") action:^{
         Class<SGDownloadsCompanion> companion = SGDownloadsCompanion();
-        if (companion) [companion downloadTrack];
+        if (!companion) return;
+        [takeover.sheet dismissViewControllerAnimated:YES completion:nil];
+        [companion downloadTrackSilently];
     }];
     item.disabled = !SGDownloadsAvailable();
     item.key = @"spotifyglass.playerDownload";
@@ -707,7 +709,7 @@ static NSArray<SGRPlayerMenuSection *> *sectionsFor(SGRPlayerMenuTakeover *t, NS
     [main addObject:backgroundStyleItem(t)];
     [main addObject:lyricsBlurItem(t)];
     [main addObject:lyricsSourceItem(t)];
-    [main addObject:downloadItem()];
+    [main addObject:downloadItem(t)];
     [main addObject:downloadLosslessItem(t)];
     [main addObject:editInfoItem()];
     if (more.count == 1) {

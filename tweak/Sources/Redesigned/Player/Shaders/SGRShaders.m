@@ -298,6 +298,22 @@ typedef struct {
 } SGRShaderUniforms;
 _Static_assert(sizeof(SGRShaderUniforms) == 176, "The Metal Uniforms contract must stay 176 bytes");
 
+typedef struct {
+    vector_float2 resolution, focus;
+    float focusRadius, time, deltaTime;
+    uint32_t frameIndex;
+    float motion, level, bass, mid, treble, beat, beatCount, bpm;
+    float energy, brightness, position, duration, progress, playing;
+    float sinceTrackChange, trackSeed;
+    vector_float2 tilt;
+    float clipReady, textReady;
+    vector_float4 textAspect;
+    vector_float4 color0, color1, color2, accent;
+    vector_float4 key[3];
+    vector_float4 paramSlots[4];
+} SGRChromaFrame;
+_Static_assert(sizeof(SGRChromaFrame) == 304, "The ChromaFrame contract must stay 304 bytes");
+
 NSString *SGRShaderTemplateSource(void) { return kSource; }
 
 static id<MTLRenderPipelineState> sg_pipeline, sg_builtinPipeline;
@@ -368,7 +384,7 @@ void SGRShaderValidateSource(NSString *source, void (^completion)(NSError *)) {
     dispatch_async(shaderWorkQueue(), ^{
         NSError *error;
         if (![source isKindOfClass:NSString.class] || ![source lengthOfBytesUsingEncoding:NSUTF8StringEncoding] || [source lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > SGRShaderSourceLimit)
-            error = [NSError errorWithDomain:@"spotifyglass.redesign.shader" code:3 userInfo:@{NSLocalizedDescriptionKey: @"Metal source must fit within 64 KiB."}];
+            error = [NSError errorWithDomain:@"spotifyglass.redesign.shader" code:3 userInfo:@{NSLocalizedDescriptionKey: @"Metal source must fit within 256 KiB."}];
         else if (!SGRShaderDevice()) error = [NSError errorWithDomain:@"spotifyglass.redesign.shader" code:4 userInfo:@{NSLocalizedDescriptionKey: @"Metal is unavailable on this device."}];
         else SGRShaderBuildPipeline(source, &error);
         dispatch_async(dispatch_get_main_queue(), ^{ if (completion) completion(error); });
@@ -773,7 +789,37 @@ static const float kSettled = 0.02f;
         return;
     }
     [encoder setRenderPipelineState:framePipeline];
-    [encoder setFragmentBytes:u length:sizeof(*u) atIndex:0];
+    NSDictionary *profile = selectedProfile();
+    if (profile && [profile[@"source"] containsString:@"ChromaFrame"] && [profile[@"source"] containsString:@"chromaFragment"] && [profile[@"source"] containsString:@"chromaVertex"]) {
+        SGRChromaFrame frame = {0};
+        CGSize drawable = view.drawableSize;
+        frame.resolution = (vector_float2){(float)drawable.width, (float)drawable.height};
+        frame.focus = (vector_float2){0.5f, 0.5f}; frame.focusRadius = 0.5f;
+        frame.time = (float)_time; frame.deltaTime = dt;
+        frame.frameIndex = (uint32_t)(sg_pendingFrames + sg_stoppingFrames);
+        frame.motion = u->tilt.x + u->tilt.y; frame.level = energy; frame.bass = bass;
+        frame.mid = (u->spectrum[2].x + u->spectrum[2].y) * 0.5f; frame.treble = u->spectrum[5].w;
+        frame.beat = _beat; frame.beatCount = 0; frame.bpm = 120;
+        frame.energy = energy; frame.brightness = energy; frame.position = 0; frame.duration = 0; frame.progress = 0; frame.playing = 1;
+        frame.sinceTrackChange = (float)_time; frame.trackSeed = 1;
+        frame.tilt = (vector_float2){u->tilt.x, u->tilt.y}; frame.clipReady = 0; frame.textReady = 0;
+        frame.textAspect = (vector_float4){1, 1, 0, 0};
+        frame.color0 = u->tints[0]; frame.color1 = u->tints[1]; frame.color2 = u->tints[0]; frame.accent = u->tints[1];
+        frame.paramSlots[0] = (vector_float4){0.0f, 0.5f, 0.5f, 0.5f};
+        frame.paramSlots[1] = (vector_float4){0.5f, 0.5f, 0.5f, 0.5f};
+        frame.paramSlots[2] = (vector_float4){0.5f, 0.5f, 0.5f, 0.5f};
+        frame.paramSlots[3] = (vector_float4){0.5f, 0.5f, 0.5f, 0.5f};
+        [encoder setFragmentBytes:&frame length:sizeof(frame) atIndex:0];
+        static id<MTLTexture> dummyTexture;
+        if (dummyTexture.device != view.device) {
+            MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:1 height:1 mipmapped:NO];
+            dummyTexture = [view.device newTextureWithDescriptor:desc];
+            uint8_t pixel[4] = {0, 0, 0, 255}; [dummyTexture replaceRegion:MTLRegionMake2D(0, 0, 1, 1) mipmapLevel:0 withBytes:pixel bytesPerRow:4];
+        }
+        for (NSUInteger textureIndex = 0; textureIndex <= 4; textureIndex++) [encoder setFragmentTexture:dummyTexture atIndex:textureIndex];
+    } else {
+        [encoder setFragmentBytes:u length:sizeof(*u) atIndex:0];
+    }
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     [encoder endEncoding];
     [buffer presentDrawable:drawable];

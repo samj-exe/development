@@ -1,8 +1,8 @@
 #import "SGRShaderLibrary.h"
 #include <math.h>
 
-NSUInteger const SGRShaderSourceLimit = 64 * 1024;
-NSUInteger const SGRShaderProfileLimit = 16;
+NSUInteger const SGRShaderSourceLimit = 256 * 1024;
+NSUInteger const SGRShaderProfileLimit = 80;
 NSNotificationName const SGRShaderLibraryChangedNotification = @"spotifyglass.redesign.shaderLibraryChanged";
 static NSString *const kSession = @"spotifyglass.redesign.shader.session";
 static NSString *const kQuarantine = @"spotifyglass.redesign.shader.quarantine";
@@ -38,8 +38,8 @@ static NSError *libraryError(NSString *message) {
     }
     NSNumber *size;
     [url getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
-    if (size.unsignedLongLongValue > 2 * 1024 * 1024) {
-        _loadError = @"The saved library exceeds 2 MiB. It has been left untouched.";
+    if (size.unsignedLongLongValue > 6 * 1024 * 1024) {
+        _loadError = @"The saved library exceeds 6 MiB. It has been left untouched.";
         return self;
     }
     NSData *data = [NSData dataWithContentsOfURL:url options:0 error:nil];
@@ -81,7 +81,7 @@ static NSError *libraryError(NSString *message) {
             message = @"Use a shader name of 1–60 characters without control characters.";
         else if (!bytes.length || bytes.length > SGRShaderSourceLimit ||
                  [source rangeOfString:[NSString stringWithFormat:@"%C", (unichar)0]].location != NSNotFound)
-            message = @"Metal source must be valid UTF-8, contain no NUL characters, and fit within 64 KiB.";
+            message = @"Metal source must be valid UTF-8, contain no NUL characters, and fit within 256 KiB.";
         else if (![fps isKindOfClass:NSNumber.class] || !isfinite([fps doubleValue]) || [fps doubleValue] < 1 || [fps doubleValue] > 60 || floor([fps doubleValue]) != [fps doubleValue])
             message = @"The frame limit must be a whole number from 1 to 60.";
         else if (![scale isKindOfClass:NSNumber.class] || !isfinite([scale doubleValue]) || [scale doubleValue] < 0.1 || [scale doubleValue] > 0.5)
@@ -100,7 +100,7 @@ static NSError *libraryError(NSString *message) {
     if (_loadError) { if (error) *error = libraryError(_loadError); return NO; }
     NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"version": @1, @"profiles": profiles} options:NSJSONWritingPrettyPrinted error:error];
     if (!data) return NO;
-    if (data.length > 2 * 1024 * 1024) { if (error) *error = libraryError(@"The encoded library exceeds 2 MiB. Reduce the source size before saving."); return NO; }
+    if (data.length > 6 * 1024 * 1024) { if (error) *error = libraryError(@"The encoded library exceeds 6 MiB. Reduce the source size before saving."); return NO; }
     if (![NSFileManager.defaultManager createDirectoryAtURL:_url.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:error]) return NO;
     if (![data writeToURL:_url options:NSDataWritingAtomic error:error]) return NO;
     self.profileSnapshot = [profiles copy];
@@ -114,7 +114,7 @@ static NSError *libraryError(NSString *message) {
         NSMutableArray *rows = [self.profileSnapshot mutableCopy];
         NSUInteger index = [rows indexOfObjectPassingTest:^BOOL(NSDictionary *row, NSUInteger i, BOOL *stop) { return [row[@"id"] isEqual:valid[@"id"]]; }];
         if (index == NSNotFound) {
-            if (rows.count >= SGRShaderProfileLimit) { if (error) *error = libraryError(@"The library holds up to 16 shaders. Delete one before adding another."); return NO; }
+            if (rows.count >= SGRShaderProfileLimit) { if (error) *error = libraryError(@"The library holds up to 80 shaders. Delete one before adding another."); return NO; }
             [rows addObject:valid];
         } else rows[index] = valid;
         return [self writeProfiles:rows error:error];
@@ -171,7 +171,16 @@ SGRShaderLibraryStore *SGRShaderLibrary(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         NSURL *root = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
-        store = [[SGRShaderLibraryStore alloc] initWithURL:[root URLByAppendingPathComponent:@"spotifyglass.redesign.shaders/library.json"] defaults:NSUserDefaults.standardUserDefaults];
+        NSURL *url = [root URLByAppendingPathComponent:@"spotifyglass.redesign.shaders/library.json"];
+        if (![url checkResourceIsReachableAndReturnError:nil]) {
+            NSURL *bundled = [NSBundle.mainBundle URLForResource:@"library" withExtension:@"json"];
+            if (!bundled) bundled = [NSBundle.mainBundle URLForResource:@"Shaders/library" withExtension:@"json"];
+            if (bundled) {
+                [NSFileManager.defaultManager createDirectoryAtURL:url.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
+                [NSFileManager.defaultManager copyItemAtURL:bundled toURL:url error:nil];
+            }
+        }
+        store = [[SGRShaderLibraryStore alloc] initWithURL:url defaults:NSUserDefaults.standardUserDefaults];
     });
     return store;
 }

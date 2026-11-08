@@ -118,7 +118,7 @@ static void exportProfile(UIViewController *owner, NSDictionary *profile) {
 - (BOOL)textView:(UITextView *)view shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text {
     NSString *candidate = [view.text stringByReplacingCharactersInRange:range withString:text];
     if ([candidate lengthOfBytesUsingEncoding:NSUTF8StringEncoding] <= SGRShaderSourceLimit) return YES;
-    [self updateStatus:@"Source is limited to 64 KiB. The extra text was not inserted."];
+    [self updateStatus:@"Source is limited to 256 KiB. The extra text was not inserted."];
     return NO;
 }
 - (void)save {
@@ -167,7 +167,7 @@ static void exportProfile(UIViewController *owner, NSDictionary *profile) {
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section { return section == 0 ? 3 : SGRShaderLibrary().profiles.count; }
 - (NSString *)tableView:(UITableView *)table titleForHeaderInSection:(NSInteger)section { return section ? @"Your shaders" : @"Local shaders"; }
 - (NSString *)tableView:(UITableView *)table titleForFooterInSection:(NSInteger)section {
-    if (section) return SGRShaderLibrary().loadError ?: @"Tap a shader for its source, selection and export. Files stay on this device until you share them. Up to 16 shaders, 64 KiB of Metal source each. Imported code runs on your GPU; frame and resolution limits cannot bound an arbitrary shader's execution time.";
+    if (section) return SGRShaderLibrary().loadError ?: @"Tap a shader for its source, selection and export. Files stay on this device until you share them. Up to 80 shaders, 256 KiB of Metal source each. Imported code runs on your GPU; frame and resolution limits cannot bound an arbitrary shader's execution time.";
     return @"Create from the original built-in Metal template or import a shader profile JSON file. Source is compiled before saving. The Shader player background must be selected to see it.";
 }
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {

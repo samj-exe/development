@@ -7,6 +7,7 @@
 + (NSString *)downloadSummary;
 + (BOOL)downloadActive;
 + (void)downloadTrack;
++ (void)downloadTrackSilently;
 + (void)downloadAlbum;
 + (void)checkTrack;
 + (void)cancelDownload;

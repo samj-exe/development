@@ -15,6 +15,7 @@ __attribute__((visibility("default")))
 + (NSString *)downloadSummary;
 + (BOOL)downloadActive;
 + (void)downloadTrack;
++ (void)downloadTrackSilently;
 + (void)downloadAlbum;
 + (void)checkTrack;
 + (void)cancelDownload;
@@ -37,6 +38,7 @@ __attribute__((visibility("default")))
 + (NSString *)downloadSummary { return SAPTrackDownloadSummary(); }
 + (BOOL)downloadActive { return SAPTrackDownloadActive(); }
 + (void)downloadTrack { [SAPSettingsActions perform:SAPSettingsDownload]; }
++ (void)downloadTrackSilently { SAPDownloadCurrentTrack(nil); }
 + (void)downloadAlbum { [SAPSettingsActions perform:SAPSettingsDownloadAlbum]; }
 + (void)checkTrack { [SAPSettingsActions perform:SAPSettingsVerify]; }
 + (void)cancelDownload { [SAPSettingsActions perform:SAPSettingsCancelDownload]; }

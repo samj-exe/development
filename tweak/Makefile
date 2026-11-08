@@ -14,6 +14,7 @@ spotifyglass_FILES := $(shell find Sources -name '*.m' -o -name '*.x' -o -name '
 spotifyglass_FILES := $(filter-out Sources/Shared/WebPlayer/%,$(spotifyglass_FILES))
 spotifyglass_CFLAGS := -fobjc-arc -ISources -DSG_VERSION=\"$(SG_VERSION)\"
 spotifyglass_FRAMEWORKS := UIKit QuartzCore UniformTypeIdentifiers MediaPlayer CoreImage AudioToolbox AVFoundation CoreVideo ImageIO CoreHaptics Accelerate Network CoreML CoreMotion CoreText NaturalLanguage PhotosUI Metal MetalKit
+spotifyglass_RESOURCE_DIRS := Resources
 
 spotifyglass_LOGOS_DEFAULT_GENERATOR := internal
 
