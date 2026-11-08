@@ -166,20 +166,57 @@ static NSError *libraryError(NSString *message) {
 }
 @end
 
+static NSURL *bundledShaderLibraryURL(void) {
+    NSURL *bundled = [NSBundle.mainBundle URLForResource:@"library" withExtension:@"json"];
+    if (!bundled) bundled = [NSBundle.mainBundle URLForResource:@"library" withExtension:@"json" subdirectory:@"Shaders"];
+    if (!bundled) bundled = [NSBundle.mainBundle URLForResource:@"Shaders/library" withExtension:@"json"];
+    return bundled;
+}
+
+static void mergeBundledShaderLibrary(NSURL *target, NSURL *bundled) {
+    NSData *bundledData = [NSData dataWithContentsOfURL:bundled];
+    NSDictionary *bundledDocument = bundledData ? [NSJSONSerialization JSONObjectWithData:bundledData options:0 error:nil] : nil;
+    NSArray *bundledProfiles = [bundledDocument isKindOfClass:NSDictionary.class] ? bundledDocument[@"profiles"] : nil;
+    if (![bundledProfiles isKindOfClass:NSArray.class] || bundledProfiles.count > SGRShaderProfileLimit) return;
+
+    NSData *savedData = [NSData dataWithContentsOfURL:target];
+    NSDictionary *savedDocument = savedData ? [NSJSONSerialization JSONObjectWithData:savedData options:0 error:nil] : nil;
+    NSArray *savedProfiles = [savedDocument isKindOfClass:NSDictionary.class] ? savedDocument[@"profiles"] : nil;
+    if (![savedProfiles isKindOfClass:NSArray.class]) savedProfiles = @[];
+
+    NSMutableArray *merged = [NSMutableArray array];
+    NSMutableSet *ids = [NSMutableSet set];
+    for (NSDictionary *profile in bundledProfiles) {
+        NSString *identifier = [profile isKindOfClass:NSDictionary.class] ? profile[@"id"] : nil;
+        if ([identifier isKindOfClass:NSString.class] && ![ids containsObject:identifier]) {
+            [ids addObject:identifier];
+            [merged addObject:profile];
+        }
+    }
+    for (NSDictionary *profile in savedProfiles) {
+        NSString *identifier = [profile isKindOfClass:NSDictionary.class] ? profile[@"id"] : nil;
+        if (merged.count >= SGRShaderProfileLimit) break;
+        if ([identifier isKindOfClass:NSString.class] && ![ids containsObject:identifier]) {
+            [ids addObject:identifier];
+            [merged addObject:profile];
+        }
+    }
+
+    NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"version" : @1, @"profiles" : merged} options:NSJSONWritingPrettyPrinted error:nil];
+    if (data) {
+        [NSFileManager.defaultManager createDirectoryAtURL:target.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
+        [data writeToURL:target options:NSDataWritingAtomic error:nil];
+    }
+}
+
 SGRShaderLibraryStore *SGRShaderLibrary(void) {
     static SGRShaderLibraryStore *store;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         NSURL *root = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
         NSURL *url = [root URLByAppendingPathComponent:@"spotifyglass.redesign.shaders/library.json"];
-        if (![url checkResourceIsReachableAndReturnError:nil]) {
-            NSURL *bundled = [NSBundle.mainBundle URLForResource:@"library" withExtension:@"json"];
-            if (!bundled) bundled = [NSBundle.mainBundle URLForResource:@"Shaders/library" withExtension:@"json"];
-            if (bundled) {
-                [NSFileManager.defaultManager createDirectoryAtURL:url.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
-                [NSFileManager.defaultManager copyItemAtURL:bundled toURL:url error:nil];
-            }
-        }
+        NSURL *bundled = bundledShaderLibraryURL();
+        if (bundled) mergeBundledShaderLibrary(url, bundled);
         store = [[SGRShaderLibraryStore alloc] initWithURL:url defaults:NSUserDefaults.standardUserDefaults];
     });
     return store;
