@@ -253,10 +253,11 @@ static UIView *curationIn(UIView *page) {
 
 static UIView *pageFor(UIViewController *menu) {
     id decided = objc_getAssociatedObject(menu, &kDecidedKey);
-    if (decided) return decided == NSNull.null ? nil : decided;
+    if (decided && decided != NSNull.null) return decided;
     UIView *page = SGRPinnedMoreRecentPage();
-    if (page) curationIn(page);
-    objc_setAssociatedObject(menu, &kDecidedKey, page ?: (id)NSNull.null, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (!page) return nil;
+    curationIn(page);
+    objc_setAssociatedObject(menu, &kDecidedKey, page, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     return page;
 }
 
@@ -275,7 +276,6 @@ static void install(UIViewController *menu) {
         inFooter = !headerFree;
         if (inFooter && table.tableFooterView && table.tableFooterView.bounds.size.height >= 1) {
             SGLog(@"redesign playlist: the sheet's header and footer are both Spotify's, sort and mix left out");
-            objc_setAssociatedObject(menu, &kDecidedKey, NSNull.null, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             return;
         }
         block = [[SGRMenuBlock alloc] initWithFrame:CGRectZero];

@@ -25,5 +25,5 @@
 SGRMirrorButton *SGRPinnedMore(UIView *page, const void *key, UIView *source);
 
 // A sheet opening within this long of a tap on a pinned ⋯ is that page's context menu.
-static const NSTimeInterval SGRPinnedMoreWindow = 3;
+static const NSTimeInterval SGRPinnedMoreWindow = 10;
 UIView *SGRPinnedMoreRecentPage(void);
