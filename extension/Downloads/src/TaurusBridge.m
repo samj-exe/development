@@ -16,6 +16,9 @@ __attribute__((visibility("default")))
 + (BOOL)downloadActive;
 + (void)downloadTrack;
 + (void)downloadTrackSilently;
++ (void)downloadTrackURI:(NSString *)uri title:(NSString *)title;
++ (void)removeTrackURI:(NSString *)uri;
++ (void)trackDownloaded:(NSString *)uri completion:(void (^)(BOOL))completion;
 + (void)downloadAlbum;
 + (void)checkTrack;
 + (void)cancelDownload;
@@ -39,6 +42,9 @@ __attribute__((visibility("default")))
 + (BOOL)downloadActive { return SAPTrackDownloadActive(); }
 + (void)downloadTrack { [SAPSettingsActions perform:SAPSettingsDownload]; }
 + (void)downloadTrackSilently { SAPDownloadCurrentTrack(nil); }
++ (void)downloadTrackURI:(NSString *)uri title:(NSString *)title { SAPDownloadTrack(uri,title,nil); }
++ (void)removeTrackURI:(NSString *)uri { SAPRemoveTrack(uri,nil); }
++ (void)trackDownloaded:(NSString *)uri completion:(void (^)(BOOL))completion { SAPTrackIsDownloaded(uri,completion); }
 + (void)downloadAlbum { [SAPSettingsActions perform:SAPSettingsDownloadAlbum]; }
 + (void)checkTrack { [SAPSettingsActions perform:SAPSettingsVerify]; }
 + (void)cancelDownload { [SAPSettingsActions perform:SAPSettingsCancelDownload]; }

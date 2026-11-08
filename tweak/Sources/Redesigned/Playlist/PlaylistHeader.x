@@ -292,7 +292,18 @@ static void showPlaylist(SGRHeaderInfo *info, UIView *block, UIView *root, id mo
     [info showCreatorLink:SGRFindByIdentifier(block, @"Components.PlaylistHeader.collaboratorsButton", &kCreatorKey)];
 
     UIView *page = SGRPlaylistPageOf(root);
-    SGRPinnedMore(page, &kPinnedMoreKey, SGRFindByIdentifier(block, @"Components.UI.ContextMenuButton*", &kMoreKey));
+    SGRMirrorButton *pinnedMore = SGRPinnedMore(page, &kPinnedMoreKey, SGRFindByIdentifier(block, @"Components.UI.ContextMenuButton*", &kMoreKey));
+    pinnedMore.layer.zPosition = 10001;
+    __weak UIView *weakPlaylistBlock = block, *weakPlaylistPage = page;
+    for (NSNumber *delay in @[@0.3, @1.0]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (weakPlaylistBlock && weakPlaylistPage) {
+                SGRMirrorButton *lateMore = SGRPinnedMore(weakPlaylistPage, &kPinnedMoreKey,
+                    SGRFindByIdentifier(weakPlaylistBlock, @"Components.UI.ContextMenuButton*", &kMoreKey));
+                lateMore.layer.zPosition = 10001;
+            }
+        });
+    }
     SGRPlaylistTakeSort(page, SGRFindByIdentifier(root, @"Components.Header.UI.Toolbar.Button", &kSortKey));
     // The name and Play are what the header waits for; the row's other buttons fade in on their own when late.
     if (title && play) SGRRevealMark(page, SGRRevealHeader);

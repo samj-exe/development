@@ -754,6 +754,56 @@ void SAPDownloadCurrentTrack(void (^message)(NSString *)) {
         });});
     });
 }
+void SAPDownloadTrack(NSString *uri, NSString *trackTitle, void (^message)(NSString *)) {
+    SAPInstallTrackDownloader();
+    if (atomic_load(&active)) { if (message) message(SAPTrackDownloadSummary()); return; }
+    NSString *urlString = [uri isKindOfClass:NSString.class] ? uri : nil;
+    NSString *identifier = [urlString hasPrefix:@"spotify:track:"] ? [urlString substringFromIndex:14] : nil;
+    if (identifier.length != 22) {
+        if (message) message(SAPL(@"Не удалось определить выбранный трек.", @"Could not identify the selected track.")); return;
+    }
+    NSArray *available = transportCandidates(); id currentTransport = available.firstObject; Method method;
+    if (!signature(object_getClass(currentTransport), NSSelectorFromString(@"callSingle:method:payload:onResponse:"), 6, '@', &method)) {
+        if (message) message(SAPL(@"Транспорт ядра Spotify недоступен.", @"Spotify core transport is unavailable.")); return;
+    }
+    dispatch_async(worker, ^{
+        if (atomic_load(&active)) return;
+        generation++; jobCandidates = available; candidateIndex = 0; routeVerified = NO; exceptionName = nil;
+        jobURL = [NSURL URLWithString:urlString]; title = [trackTitle isKindOfClass:NSString.class] && trackTitle.length ? [trackTitle copy] : identifier;
+        nativeState = progress = polls = consecutiveComplete = 0; commandSentAt=errorStateSince=0;
+        itemFound = polling = sentRequest = watchItems = existingDownload = NO;
+        responseCode = offlineAllowed = streamError = nil;
+        phase = @"preparing_native"; detail = SAPL(@"Подготавливаю нативный менеджер скачивания", @"Preparing the native download manager");
+        started = CFAbsoluteTimeGetCurrent(); notify = [message copy]; publishActivity(YES);
+        sendMessage([NSString stringWithFormat:SAPL(@"Запрашиваю скачивание «%@» в офлайн-хранилище Spotify.", @"Requesting track %@ for Spotify offline storage."), title]);
+        timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, worker);
+        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(pollSeconds * NSEC_PER_SEC)),
+            (uint64_t)(pollSeconds * NSEC_PER_SEC), (uint64_t)(pollSeconds / 10 * NSEC_PER_SEC));
+        dispatch_source_set_event_handler(timer, ^{ check(); }); dispatch_resume(timer);
+        NSUInteger expected = generation; atomic_store(&preparationGeneration, expected);
+        SAPPrepareNativeOffline(^BOOL { return atomic_load(&active) && atomic_load(&preparationGeneration) == expected; },
+            ^(BOOL ready, NSString *reason) {
+                dispatch_async(worker, ^{
+                    if (!atomic_load(&active) || generation != expected) return;
+                    if (!ready) { finish(@"native_preparation_failed", reason); return; }
+                    selectNextCandidate();
+                });
+            });
+    });
+}
+void SAPRemoveTrack(NSString *uri, void (^message)(NSString *)) {
+    NSString *urlString = [uri isKindOfClass:NSString.class] ? uri : nil;
+    if (![urlString hasPrefix:@"spotify:track:"]) { if (message) message(@"Could not identify the selected track."); return; }
+    NSData *payload = SAPProtoBytes(2, [urlString dataUsingEncoding:NSUTF8StringEncoding]);
+    SAPCallOfflineCommandOnce(@"RemoveDownload", payload, ^(NSData *response, NSString *error) {
+        if (message) message(error ?: SAPL(@"Скачивание трека удалено.", @"Track download removed."));
+    });
+}
+void SAPTrackIsDownloaded(NSString *uri, void (^completion)(BOOL downloaded)) {
+    SAPJournalVerifyTrack(uri, ^(NSDictionary *track) {
+        completion([track[@"state"] isKindOfClass:NSString.class] && [track[@"state"] isEqualToString:@"downloaded"]);
+    });
+}
 void SAPDownloadCurrentAlbum(void (^message)(NSString *)) {
     SAPInstallTrackDownloader();
     SAPTraceID trace=SAPTraceCurrentOperation();if(!trace&&SAPTraceIsActive())trace=SAPTraceBegin(@"download_current_album",@"pixie_api",@{});

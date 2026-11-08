@@ -8,6 +8,9 @@
 + (BOOL)downloadActive;
 + (void)downloadTrack;
 + (void)downloadTrackSilently;
++ (void)downloadTrackURI:(NSString *)uri title:(NSString *)title;
++ (void)removeTrackURI:(NSString *)uri;
++ (void)trackDownloaded:(NSString *)uri completion:(void (^)(BOOL))completion;
 + (void)downloadAlbum;
 + (void)checkTrack;
 + (void)cancelDownload;

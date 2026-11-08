@@ -2,6 +2,9 @@
 #import <Foundation/Foundation.h>
 void SAPInstallTrackDownloader(void);
 void SAPDownloadCurrentTrack(void (^message)(NSString *));
+void SAPDownloadTrack(NSString *uri, NSString *title, void (^message)(NSString *));
+void SAPRemoveTrack(NSString *uri, void (^message)(NSString *));
+void SAPTrackIsDownloaded(NSString *uri, void (^completion)(BOOL downloaded));
 void SAPDownloadCurrentAlbum(void (^message)(NSString *));
 void SAPCancelTrackDownload(void);
 void SAPVerifyCurrentTrack(void (^message)(NSString *));

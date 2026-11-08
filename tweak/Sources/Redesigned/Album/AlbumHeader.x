@@ -381,7 +381,18 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page) {
     [info showCreatorLink:parent];
 
     // More, pinned over the page rather than left in the header, which is blanked and scrolls away.
-    SGRPinnedMore(page, &kPinnedMoreKey, SGRFindByIdentifier(header, @"Components.UI.ContextMenuButton*", &kMoreKey));
+    SGRMirrorButton *pinnedMore = SGRPinnedMore(page, &kPinnedMoreKey, SGRFindByIdentifier(header, @"Components.UI.ContextMenuButton*", &kMoreKey));
+    pinnedMore.layer.zPosition = 10001;
+    __weak UIView *weakAlbumHeader = header, *weakAlbumPage = page;
+    for (NSNumber *delay in @[@0.3, @1.0]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (weakAlbumHeader && weakAlbumPage) {
+                SGRMirrorButton *lateMore = SGRPinnedMore(weakAlbumPage, &kPinnedMoreKey,
+                    SGRFindByIdentifier(weakAlbumHeader, @"Components.UI.ContextMenuButton*", &kMoreKey));
+                lateMore.layer.zPosition = 10001;
+            }
+        });
+    }
 
     UIView *play = floatingIn(page, @"header-play-button", &kPlayKey);
     UIView *shuffle = floatingIn(page, @"Components.UI.ShuffleButton", &kShuffleKey);
