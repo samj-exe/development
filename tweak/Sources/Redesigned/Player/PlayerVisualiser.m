@@ -24,6 +24,7 @@
 // Threading: main thread only, but for the reader, which runs on the render thread.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Lyrics/SGRKaraokeView.h"
 #import "Shared/AudioEffects/AudioEffects.h"
 #import "Shared/Player/PlayerEvents.h"
 #import "Shared/Player/PlayerState.h"
@@ -49,20 +50,6 @@ static const float kSettled = 0.02f;
 // Each band shares this much with either neighbor, twice over, so one loud band is a hill and not a spike.
 static const float kSpread = 0.25f;
 static const NSTimeInterval kTransitionSlack = 0.05;
-
-static NSUInteger sg_readers;
-
-// The reader on while any view is moving, so nothing is analyzed while none is.
-static void needReader(BOOL need) {
-    if (need) {
-        if (sg_readers++ == 0) {
-            SGRSpectrumPrepare();
-            /* no audio reader */
-        }
-    } else if (sg_readers && --sg_readers == 0) {
-        /* no audio reader */
-    }
-}
 
 static NSDictionary *noActions(void) {
     static NSDictionary *none;
@@ -91,6 +78,7 @@ static NSDictionary *noActions(void) {
     CAShapeLayer *_backShape, *_frontShape;
     UIVisualEffectView *_lyricsBlur;
     UIViewPropertyAnimator *_lyricsBlurAnimator;
+    SGRKaraokeView *_lyricsLine;
     BOOL _lyricsRequested;
     CADisplayLink *_link;
     BOOL _reading, _idle;
@@ -170,12 +158,13 @@ static CAGradientLayer *fill(CAShapeLayer *shape) {
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
     [_link invalidate];
+    if (NSThread.isMainThread) SGRSpectrumSetReading(self, NO);
+    else dispatch_async(dispatch_get_main_queue(), ^{ SGRSpectrumSetReading(nil, NO); });
 }
 
 - (void)updateBlurOpacity {
     CGFloat opacity = MIN(100, MAX(0, SGInt(SGRKeyPlayerVisualiserBlurOpacity, 100))) / 100.0;
     _lyricsBlurAnimator = setBlurIntensity(_lyricsBlur, _lyricsBlurAnimator, _lyricsRequested ? opacity : 0);
-    if (_reading) needReader(NO);
 }
 
 #pragma mark - color
@@ -232,6 +221,17 @@ static CAGradientLayer *fill(CAShapeLayer *shape) {
     _frontFill.frame = bounds;
     _backShape.frame = bounds;
     _frontShape.frame = bounds;
+    BOOL showOverlayLyrics = SGFlag(SGKeyVisualizerLyrics, NO) && !_lyricsRequested && _baseline > 200;
+    if (showOverlayLyrics && !_lyricsLine) {
+        _lyricsLine = [[SGRKaraokeView alloc] initWithFrame:CGRectZero];
+        [_lyricsLine useCompactFontSize:18];
+        [self addSubview:_lyricsLine];
+    }
+    _lyricsLine.alpha = showOverlayLyrics ? 1 : 0;
+    if (_lyricsLine && showOverlayLyrics) {
+        CGFloat screen = _screenHeight > 0 ? _screenHeight : bounds.size.height;
+        _lyricsLine.frame = CGRectMake(0, round(screen * 0.48), bounds.size.width, 64);
+    }
     [self draw];
 }
 
@@ -244,6 +244,8 @@ static CAGradientLayer *fill(CAShapeLayer *shape) {
 - (void)disappear:(void (^)(void))done {
     SGRAnimate(SGRMotionFade, ^{
         self->_content.alpha = 0;
+        self->_lyricsRequested = NO;
+        self->_lyricsBlurAnimator = setBlurIntensity(self->_lyricsBlur, self->_lyricsBlurAnimator, 0);
     }, ^(BOOL finished) { done(); });
 }
 
@@ -253,6 +255,7 @@ static CAGradientLayer *fill(CAShapeLayer *shape) {
 
 - (void)setBlurred:(BOOL)blurred animated:(BOOL)animated {
     _lyricsRequested = blurred;
+    [self setNeedsLayout];
     CGFloat opacity = MIN(100, MAX(0, SGInt(SGRKeyPlayerVisualiserBlurOpacity, 100))) / 100.0;
     void (^apply)(void) = ^{
         self->_lyricsBlurAnimator = setBlurIntensity(self->_lyricsBlur, self->_lyricsBlurAnimator, blurred ? opacity : 0);
@@ -265,8 +268,6 @@ static CAGradientLayer *fill(CAShapeLayer *shape) {
 #pragma mark - moving
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
-    BOOL blurred = SGRPlayerLyricsOpen() && SGRPlayerMotionLyricsBlurEnabled();
-    if (blurred != _lyricsRequested) [self setBlurred:blurred animated:NO];
     [self updateMotion];
 }
 
@@ -305,7 +306,7 @@ static CAGradientLayer *fill(CAShapeLayer *shape) {
 - (void)setReading:(BOOL)reading {
     if (reading == _reading) return;
     _reading = reading;
-    needReader(reading);
+    SGRSpectrumSetReading(self, reading);
 }
 
 - (void)setMoving:(BOOL)moving {
@@ -470,12 +471,11 @@ void SGRPlayerVisualiserUpdate(void) {
     if (made) sg_view = [[SGRVisualiserView alloc] initWithFrame:CGRectZero];
     layOut(field);
     if (made) {
-        BOOL blurred = SGRPlayerLyricsOpen() && SGRPlayerMotionLyricsBlurEnabled();
-        [sg_view setBlurred:blurred animated:NO];
+        [sg_view setBlurred:SGRPlayerLyricsOpen() animated:NO];
         [sg_view appear:field.window != nil];
         SGLog(@"redesign player: visualizer on the field");
     } else {
-        BOOL blurred = SGRPlayerLyricsOpen() && SGRPlayerMotionLyricsBlurEnabled();
-        if (blurred != sg_view.blurred) [sg_view setBlurred:blurred animated:sg_view.window != nil];
+        BOOL open = SGRPlayerLyricsOpen();
+        if (open != sg_view.blurred) [sg_view setBlurred:open animated:sg_view.window != nil];
     }
 }

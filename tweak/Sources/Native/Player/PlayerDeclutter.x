@@ -1,9 +1,5 @@
 #import "Core/SGCore.h"
-#import "Shared/LocalFiles/LocalFiles.h"
-#import "Shared/Player/PlayerState.h"
 #import "NowPlaying.h"
-
-static __weak UIViewController *sg_infoUnit;
 
 #pragma mark - cards and sections
 
@@ -103,7 +99,6 @@ static void finish(UIViewController *unit, BOOL changed) {
 %hook _TtC20NowPlaying_ModesImpl23InformationElementsUnit
 - (void)viewDidLayoutSubviews {
     %orig;
-    sg_infoUnit = (UIViewController *)self;
     if (!SGHidden(SGHideAddTo)) return;
     BOOL changed = NO;
     for (UIView *item in SGRowIn(((UIViewController *)self).viewIfLoaded).arrangedSubviews) {

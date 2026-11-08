@@ -15,8 +15,8 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
+#import "Shared/Gestures/Gestures.h"
 #import "Shared/Haptics/Haptics.h"
-#import "Shared/LocalFiles/LocalFiles.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "Player.h"
 #import <objc/runtime.h>
@@ -26,13 +26,11 @@ static const CGFloat kPausedScale = 0.84;
 // the cover is the player's too; a smaller one is another preview, not ours.
 static const CGFloat kCoverMinWidth = 200;
 
-static char kPlateKey, kCustomCoverOfficialImageKey;
+static char kPlateKey;
 static NSHashTable<UIView *> *sg_tilts;
 // The cover of each tilt view once found. A frame Spotify sets on a scaled view becomes its scaled
 // size, leaving bounds that no longer match the tilt view's, so the cover is not looked for by size again.
 static NSMapTable<UIView *, UIView *> *sg_covers;
-
-static void enforceCustomCoverInTilt(UIView *tilt);
 
 static CGFloat currentScale(void) {
     SPTPlayerState *state = SGPlayerState();
@@ -155,7 +153,6 @@ static void scaleEveryCover(BOOL animated) {
 // comes back. The middle third is left alone, and a hold that starts to move is a swipe to the next track.
 // It is a speed like the menu's, so with Pitch follows speed on (until switched off) it also plays an
 // octave higher, the way a record does. The native look's copy is in Native/Player/PlayerGestures.x.
-static const double kHoldSpeed = 2;
 static char kHoldKey, kBadgeGlassKey;
 
 @interface SGRCoverHold : UILongPressGestureRecognizer
@@ -172,16 +169,17 @@ static char kHoldKey, kBadgeGlassKey;
     UIView *cover = self.view;
     if (self.state == UIGestureRecognizerStateBegan) {
         CGFloat x = [self locationInView:cover].x, third = cover.bounds.size.width / 3;
-        if ((x > third && x < 2 * third) || !SGPlayerSpeedAllowed()) {
+        if (!SGGestureHoldOn() || (x > third && x < 2 * third) || !SGPlayerSpeedAllowed()) {
             self.enabled = NO;
             self.enabled = YES;   // cancels this hold
             return;
         }
+        double speed = SGGestureHoldSpeed();
         _before = SGPlayerSpeed();
-        SGSetPlayerSpeed(kHoldSpeed);
+        SGSetPlayerSpeed(speed);
         SGPlayFeedback(SGFeedbackGrab);
         [self showBadge:YES on:cover];
-        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @"Playing at 2 times speed");
+        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, [NSString stringWithFormat:@"Playing at %g times speed", speed]);
     } else if (self.state == UIGestureRecognizerStateEnded || self.state == UIGestureRecognizerStateCancelled
                || self.state == UIGestureRecognizerStateFailed) {
         if (_before > 0) SGSetPlayerSpeed(_before);
@@ -196,20 +194,22 @@ static char kHoldKey, kBadgeGlassKey;
 - (void)showBadge:(BOOL)shown on:(UIView *)cover {
     if (shown && !_badge) {
         _badgeLabel = [UILabel new];
-        UIFont *font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-        NSTextAttachment *arrows = [NSTextAttachment textAttachmentWithImage:[[UIImage systemImageNamed:@"forward.fill"
-            withConfiguration:[UIImageSymbolConfiguration configurationWithFont:font]] imageWithTintColor:UIColor.whiteColor
-            renderingMode:UIImageRenderingModeAlwaysOriginal]];
-        NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:@"2×  "
-            attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: UIColor.whiteColor}];
-        [text appendAttributedString:[NSAttributedString attributedStringWithAttachment:arrows]];
-        _badgeLabel.attributedText = text;
         _badgeLabel.textAlignment = NSTextAlignmentCenter;
         _badge = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 92, 34)];
         _badge.userInteractionEnabled = NO;
         _badgeLabel.frame = _badge.bounds;
         _badgeLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [_badge addSubview:_badgeLabel];
+    }
+    if (shown && _badgeLabel) {
+        UIFont *font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+        NSTextAttachment *arrows = [NSTextAttachment textAttachmentWithImage:[[UIImage systemImageNamed:@"forward.fill"
+            withConfiguration:[UIImageSymbolConfiguration configurationWithFont:font]] imageWithTintColor:UIColor.whiteColor
+            renderingMode:UIImageRenderingModeAlwaysOriginal]];
+        NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:[NSString stringWithFormat:@"%g×  ", SGGestureHoldSpeed()]
+            attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: UIColor.whiteColor}];
+        [text appendAttributedString:[NSAttributedString attributedStringWithAttachment:arrows]];
+        _badgeLabel.attributedText = text;
     }
     if (!_badge) return;
     _badgeShown = shown;
@@ -259,7 +259,6 @@ static void watchHold(UIView *tilt) {
     UIView *cover = coverIn(tilt);
     if (!cover) return;
     [sg_tilts addObject:tilt];
-    enforceCustomCoverInTilt(tilt);
     watchHold(tilt);
     SGRPlayerMotionCoverLaidOut();
     // The cover fills the tilt view (01.txt:37); bounds and center, unlike a frame, hold under the scale.
@@ -298,6 +297,10 @@ static const void *kPreviewKey;
 - (void)layoutSubviews {
     %orig;
     UIView *host = (UIView *)self;
+    if (!SGFlag(SGRKeyPlayerLyricLine, NO)) {
+        SGRPlayerVanish(host);
+        return;
+    }
     CGRect bounds = host.bounds;
     if (bounds.size.width < kCoverMinWidth || bounds.size.height <= 0) return;
     SGRKaraokeView *preview = objc_getAssociatedObject(host, &kPreviewKey);
@@ -324,60 +327,6 @@ static UIView *coverOfImage(UIView *image) {
     UIView *box = image.superview;
     return box && coverIn(box.superview) == box ? box : nil;
 }
-
-static UIImage *currentCustomCover(void) {
-    SPTPlayerTrack *track = SGPlayerState().track;
-    NSString *uri = SGURIString(track.URI);
-    if (!uri.length) return nil;
-    NSDictionary *metadata = [track respondsToSelector:@selector(metadata)] ? track.metadata : nil;
-    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
-    NSDictionary *edit = SGTrackEditFor(uri, albumURI);
-    NSString *path = SGTrackArtworkCoverPath(edit);
-    return path.length ? [UIImage imageWithContentsOfFile:path] : nil;
-}
-
-static BOOL playerCoverImage(UIView *view) {
-    UIView *root = view;
-    for (UIView *ancestor = view.superview; ancestor; ancestor = ancestor.superview) {
-        if ([ancestor isKindOfClass:NSClassFromString(@"_TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView")]) {
-            root = ancestor;
-            break;
-        }
-    }
-    return root != view && inCoverCell(root);
-}
-
-static void enforceCustomCoverInTilt(UIView *tilt) {
-    UIImage *custom = currentCustomCover();
-    if (!custom || !inCoverCell(tilt)) return;
-    SGForEachView(tilt, ^(UIView *view) {
-        if ([view isKindOfClass:UIImageView.class]) {
-            UIImageView *image = (UIImageView *)view;
-            if (image.image != custom) image.image = custom;
-        }
-    });
-}
-
-%hook UIImageView
-- (void)setImage:(UIImage *)image {
-    UIImageView *view = (UIImageView *)self;
-    UIImage *custom = playerCoverImage(view) ? currentCustomCover() : nil;
-    if (!custom && image) objc_setAssociatedObject(view, &kCustomCoverOfficialImageKey, image, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    %orig(custom ?: image);
-}
-
-- (void)layoutSubviews {
-    %orig;
-    UIImageView *view = (UIImageView *)self;
-    UIImage *custom = playerCoverImage(view) ? currentCustomCover() : nil;
-    if (custom) {
-        if (view.image != custom) view.image = custom;
-    } else {
-        UIImage *official = objc_getAssociatedObject(view, &kCustomCoverOfficialImageKey);
-        if (official && view.image != official) view.image = official;
-    }
-}
-%end
 
 %hook _TtC22NowPlaying_ElementsKitP33_1D6A1393FEB35D7207F503DA17E7748E14ImageViewProxy
 - (void)setFrame:(CGRect)frame {

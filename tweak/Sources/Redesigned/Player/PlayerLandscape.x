@@ -14,7 +14,6 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
 #import "Shared/Lyrics/Lyrics.h"
-#import "Shared/LocalFiles/LocalFiles.h"
 #import "Shared/Player/PlayerState.h"
 #import "Player.h"
 
@@ -203,12 +202,8 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     if (!state) return;
-    NSDictionary *metadata = [state.track.metadata isKindOfClass:NSDictionary.class] ? state.track.metadata : nil;
-    NSDictionary *edit = SGTrackEditFor(SGURIString(state.track.URI), metadata[@"album_uri"]);
-    NSString *title = edit[@"title"];
-    NSString *artist = edit[@"artist"];
-    _title.text = [title isKindOfClass:NSString.class] && title.length ? title : state.track.trackTitle;
-    _artist.text = [artist isKindOfClass:NSString.class] && artist.length ? artist : state.track.artistName;
+    _title.text = state.track.trackTitle;
+    _artist.text = state.track.artistName;
     [_play setImage:[UIImage systemImageNamed:state.isPaused ? @"play.fill" : @"pause.fill" withConfiguration:
         [UIImageSymbolConfiguration configurationWithPointSize:30 weight:UIImageSymbolWeightBold]] forState:UIControlStateNormal];
     _play.accessibilityLabel = state.isPaused ? @"Play" : @"Pause";

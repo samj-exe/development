@@ -33,7 +33,6 @@
 #import "Shared/Sing/SGSingController.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LocalFiles/LocalFiles.h"
-#import "Shared/Player/PlayerState.h"
 #import "Player.h"
 
 static const CGFloat kThumbSide = 72;          // the cover once the lyrics are up
@@ -56,7 +55,7 @@ static const CGFloat kLivingHeight = 200;
 // The lines on their own: the controls under them fade after this long without a touch.
 static const NSTimeInterval kRest = 4;
 
-static char kOverlayKey, kPlateKey, kTitleKey, kArtistKey, kStackKey;
+static char kOverlayKey, kPlateKey, kTitleKey, kStackKey;
 static BOOL sg_open;
 static BOOL sg_moving;                      // the transition is in flight, so no layout pass may re-place it
 static __weak UIView *sg_host;              // SPTNowPlayingView
@@ -182,12 +181,30 @@ static CGRect untransformed(UIView *view, UIView *host) {
     return CGRectOffset(frame, -t.tx, -t.ty);
 }
 
+static BOOL besideCoverNow(UIView *host) {
+    return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad
+        && SGFlag(SGRKeyPlayerLyricsBeside, NO)
+        && host.bounds.size.width >= 680;
+}
+
 static SGRLyricsLayout layoutIn(UIView *host) {
     SGRLyricsLayout l = {0};
     UIView *info = sg_info.viewIfLoaded, *duration = sg_duration.viewIfLoaded, *title = sg_titleElement;
     if (!host || host.bounds.size.height < kLivingHeight || !info || !duration) return l;
     CGRect area = SGRPlayerArtworkAreaIn(host), cover = SGRPlayerCoverFrameIn(host);
     if (CGRectIsNull(area) || CGRectIsNull(cover)) return l;
+    if (besideCoverNow(host) && CGRectGetMaxX(cover) + 280 < host.bounds.size.width) {
+        l.cover = cover;
+        l.thumb = cover;
+        l.lift = 0;
+        l.shift = 0;
+        CGFloat stageX = CGRectGetMaxX(cover) + 32;
+        CGFloat stageY = MAX(host.safeAreaInsets.top + 48, CGRectGetMinY(area));
+        CGFloat stageH = host.bounds.size.height - stageY - host.safeAreaInsets.bottom - 24;
+        l.stage = CGRectMake(stageX, stageY, host.bounds.size.width - stageX - 32, stageH);
+        l.ok = l.stage.size.width >= 240 && l.stage.size.height > kLivingHeight / 2;
+        return l;
+    }
     CGRect row = untransformed(info, host), bar = untransformed(duration, host);
     // The thumbnail takes the title's own leading edge, so the two line up down the page.
     CGFloat leading = title ? CGRectGetMinX(untransformed(title, host)) : CGRectGetMinX(area) + SGRSideMargin;
@@ -338,30 +355,45 @@ static CGFloat thumbRadius(SGRLyricsLayout l, BOOL open) {
 static NSHashTable<UIView *> *sg_faded;
 
 static NSArray<UIView *> *controlViews(void) {
+    BOOL keepTitle = SGFlag(SGRKeyLyricsKeepTitle, NO);
     UIView *info = sg_info.viewIfLoaded, *floating = sg_floating.viewIfLoaded;
     NSMutableArray<UIView *> *views = [NSMutableArray array];
     UIView *stack = SGRFindByIdentifier(sg_host, @"npv.bottomStackView", &kStackKey);
     if (stack) {
         for (UIView *view in stack.subviews) {
-            if ([info isDescendantOfView:view] || [floating isDescendantOfView:view]) continue;
+            if ([floating isDescendantOfView:view]) continue;
+            if (keepTitle && [info isDescendantOfView:view]) continue;
             if (!view.hidden && view.alpha > 0.01) [views addObject:view];
         }
-        return views;
+    } else {
+        static NSArray<NSString *> *names;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{
+            names = @[@"DurationElementUnit", @"PlaybackControlsElementsUnit", @"FooterElementsUnit"];
+        });
+        // A unit's view answers to its controller as its next responder, wherever the unit sits in the tree.
+        SGForEachView(sg_host, ^(UIView *view) {
+            UIResponder *owner = view.nextResponder;
+            if (![owner isKindOfClass:UIViewController.class] || ((UIViewController *)owner).viewIfLoaded != view) return;
+            NSString *name = NSStringFromClass(owner.class);
+            if (!keepTitle && [name hasSuffix:@"InformationElementsUnit"] && !view.hidden && view.alpha > 0.01) {
+                [views addObject:view];
+                return;
+            }
+            for (NSString *unit in names) {
+                if ([name hasSuffix:unit] && !view.hidden && view.alpha > 0.01) [views addObject:view];
+            }
+        });
     }
-    static NSArray<NSString *> *names;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        names = @[@"DurationElementUnit", @"PlaybackControlsElementsUnit", @"FooterElementsUnit"];
-    });
-    // A unit's view answers to its controller as its next responder, wherever the unit sits in the tree.
-    SGForEachView(sg_host, ^(UIView *view) {
-        UIResponder *owner = view.nextResponder;
-        if (![owner isKindOfClass:UIViewController.class] || ((UIViewController *)owner).viewIfLoaded != view) return;
-        NSString *name = NSStringFromClass(owner.class);
-        for (NSString *unit in names) {
-            if ([name hasSuffix:unit] && !view.hidden && view.alpha > 0.01) [views addObject:view];
-        }
-    });
+    if (!keepTitle) {
+        SGForEachView(sg_host, ^(UIView *view) {
+            UIResponder *owner = view.nextResponder;
+            if ([owner isKindOfClass:UIViewController.class] && ((UIViewController *)owner).viewIfLoaded == view
+                && [NSStringFromClass(owner.class) hasSuffix:@"HeaderElementsUnit"] && !view.hidden && view.alpha > 0.01) {
+                [views addObject:view];
+            }
+        });
+    }
     return views;
 }
 
@@ -383,11 +415,12 @@ BOOL SGRLyricsFadedView(UIView *view) {
 }
 
 // Where the lines go on their own: from where they start under the title row down to the bottom of the
-// safe area, over the controls that faded.
+// safe area, over the controls that faded (or from the top safe area when Keep title and cover is off).
 static CGRect aloneStage(UIView *host, SGRLyricsLayout l) {
     CGRect safe = UIEdgeInsetsInsetRect(host.bounds, host.safeAreaInsets);
-    return CGRectMake(CGRectGetMinX(l.stage), CGRectGetMinY(l.stage), l.stage.size.width,
-                      CGRectGetMaxY(safe) - kLyricsBottom - CGRectGetMinY(l.stage));
+    CGFloat minY = SGFlag(SGRKeyLyricsKeepTitle, NO) ? CGRectGetMinY(l.stage) : CGRectGetMinY(safe) + 12;
+    return CGRectMake(CGRectGetMinX(l.stage), minY, l.stage.size.width,
+                      CGRectGetMaxY(safe) - kLyricsBottom - minY);
 }
 
 // The lines' tap seeks, so it is off while they are alone. Back on a turn of the run loop later: the tap
@@ -574,7 +607,11 @@ static void setAlone(BOOL alone, BOOL animated) {
         [overlay.lyrics layoutIfNeeded];
     };
     void (^fade)(void) = ^{
-        if (overlay.superview) overlay.lyrics.extrasHidden = alone;
+        if (overlay.superview) {
+            overlay.lyrics.extrasHidden = alone;
+            BOOL hideThumb = alone && !SGFlag(SGRKeyLyricsKeepTitle, NO) && !besideCoverNow(host);
+            overlay.thumb.alpha = SGRPlayerMotionShowing() || hideThumb ? 0 : 1;
+        }
         fadeControls(alone);
     };
     sg_wake.enabled = alone;
@@ -699,45 +736,10 @@ void SGRPlayerToggleLyrics(void) {
     setOpen(!sg_open, YES);
 }
 
-static void refreshPlayerInfoLabels(void) {
-    UIView *host = sg_host;
-    if (!host) host = sg_info.viewIfLoaded;
-    if (!host) return;
-    SPTPlayerTrack *track = SGPlayerState().track;
-    if (!track) return;
-    NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
-    NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
-    NSDictionary *edit = SGTrackEditFor(SGURIString(track.URI), albumURI);
-    NSString *titleText = [edit[@"title"] isKindOfClass:NSString.class] && ((NSString *)edit[@"title"]).length ? edit[@"title"] : track.trackTitle;
-    NSString *artistText = [edit[@"artist"] isKindOfClass:NSString.class] && ((NSString *)edit[@"artist"]).length ? edit[@"artist"] : track.artistName;
-    UILabel *title = (UILabel *)SGRFindByIdentifier(host, @"now-playing-title-label", &kTitleKey);
-    UILabel *artist = (UILabel *)SGRFindByIdentifier(host, @"now-playing-subtitle-label", &kArtistKey);
-    if ([title isKindOfClass:UILabel.class] && titleText.length && ![title.text isEqualToString:titleText]) title.text = titleText;
-    if ([artist isKindOfClass:UILabel.class] && artistText.length && ![artist.text isEqualToString:artistText]) artist.text = artistText;
-}
-
-%hook UILabel
-- (void)setText:(NSString *)text {
-    NSString *identifier = self.accessibilityIdentifier;
-    if ([identifier isEqualToString:@"now-playing-title-label"] || [identifier isEqualToString:@"now-playing-subtitle-label"] ) {
-        SPTPlayerTrack *track = SGPlayerState().track;
-        NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
-        NSString *albumURI = [metadata[@"album_uri"] isKindOfClass:NSString.class] ? metadata[@"album_uri"] : nil;
-        NSDictionary *edit = track ? SGTrackEditFor(SGURIString(track.URI), albumURI) : nil;
-        NSString *custom = [identifier isEqualToString:@"now-playing-title-label"] ? edit[@"title"] : edit[@"artist"];
-        if ([custom isKindOfClass:NSString.class] && custom.length) text = custom;
-        else if ([identifier isEqualToString:@"now-playing-title-label"] && track.trackTitle.length) text = track.trackTitle;
-        else if ([identifier isEqualToString:@"now-playing-subtitle-label"] && track.artistName.length) text = track.artistName;
-    }
-    %orig(text);
-}
-%end
-
 // A layout pass, a new track or a turn of the phone: the state is put back where it belongs without
 // animating, since the frames it is measured from have just changed.
 static void replace(void) {
     UIView *host = sg_host;
-    refreshPlayerInfoLabels();
     if (!host || sg_moving) return;   // a pass in the middle of the transition would cut it short
     SGRLyricsLayout l = layoutIn(host);
     if (sg_open && !l.ok) return;
@@ -753,6 +755,8 @@ static void replace(void) {
     }
     place(overlay, host, l);
     overlay.thumb.transform = thumbTransform(l);
+    BOOL hideThumb = sg_alone && !SGFlag(SGRKeyLyricsKeepTitle, NO) && !besideCoverNow(host);
+    overlay.thumb.alpha = SGRPlayerMotionShowing() || hideThumb ? 0 : 1;
     overlay.cover.layer.cornerRadius = thumbRadius(l, YES);
     overlay.lyrics.frame = overlay.stage.bounds;
     SGRPlayerCoverList().alpha = 0;
@@ -820,6 +824,13 @@ static void replace(void) {
 - (void)viewDidLayoutSubviews {
     %orig;
     sg_floating = (UIViewController *)self;
+    if (SGHidden(SGRKeyPlayerHideVideoSwitch)) {
+        SGForEachView(((UIViewController *)self).viewIfLoaded, ^(UIView *view) {
+            if ([view.accessibilityIdentifier isEqualToString:@"nowplaying-npv-musicvideos-switch"]) {
+                SGRPlayerVanish(view);
+            }
+        });
+    }
     replace();
 }
 %end
@@ -845,13 +856,7 @@ static void replace(void) {
 // A rename is looked up like a new track, so lines that stay up with none for the new names go once the
 // look for them ends, as a new track's do after the grace.
 - (void)editsChanged:(NSNotification *)note {
-    SPTPlayerState *state = SGPlayerState();
-    NSString *track = SGURIString(state.track.URI);
-    id album = state.track.metadata[@"album_uri"];
-    NSString *albumURI = [album isKindOfClass:NSString.class] ? album : nil;
-    NSString *editedTrack = [note.object isKindOfClass:NSString.class] ? note.object : nil;
-    NSString *editedAlbum = [note.userInfo[@"albumURI"] isKindOfClass:NSString.class] ? note.userInfo[@"albumURI"] : nil;
-    if (![editedTrack isEqualToString:track] && ![editedAlbum isEqualToString:albumURI]) return;
+    if (![note.object isKindOfClass:NSString.class] || ![note.object isEqualToString:_track]) return;
     SGRPlayerLyricsChanged();
 }
 
@@ -868,15 +873,11 @@ static void replace(void) {
 // The lines go once the grace is over and nothing is looking for the track's own any more.
 - (void)closeIfNone {
     if (!_graceOver || !sg_open || SGRPlayerLyricsAvailable() || SGKaraokeLooking(SGKaraokePlayingTrack())) return;
-    NSString *playingTrack = SGURIString(SGPlayerState().track.URI);
-    if (!playingTrack || ![playingTrack isEqualToString:_track]) return;
     SGLog(@"redesign player: no lyrics for the track that came on, the cover is back");
     setOpen(NO, YES);
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
-    refreshPlayerInfoLabels();
-    dispatch_async(dispatch_get_main_queue(), ^{ refreshPlayerInfoLabels(); });
     // A pause brings the controls back and keeps them; playing again starts the clock.
     if (state.isPaused) {
         setAlone(NO, YES);
@@ -913,10 +914,6 @@ static SGRPlayerLyricsWatcher *sg_watcher;
     %init;
     sg_watcher = [SGRPlayerLyricsWatcher new];
     SGAddPlayerStateObserver(sg_watcher);
-    [NSNotificationCenter.defaultCenter addObserverForName:SGLocalFileEditsDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
-        refreshPlayerInfoLabels();
-        dispatch_async(dispatch_get_main_queue(), ^{ refreshPlayerInfoLabels(); });
-    }];
     // In the background the controls stay up; back in front the clock starts again.
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
         setAlone(NO, NO);

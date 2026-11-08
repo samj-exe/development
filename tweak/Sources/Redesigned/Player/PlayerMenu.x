@@ -5,7 +5,6 @@
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
-#import "Shared/LocalFiles/LocalFiles.h"
 #import "Player.h"
 #import "SGRPlayerMenu.h"
 

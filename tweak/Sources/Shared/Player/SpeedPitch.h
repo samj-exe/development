@@ -1,8 +1,6 @@
 #import <UIKit/UIKit.h>
 
 void SGPlayerMenuWatchMoreButton(UIView *button);
-BOOL SGSpeedPitchMenuIsPlayer(UIViewController *menu);
-BOOL SGSpeedPitchMenuSetAccessory(UIViewController *menu, UIView *accessory);
 UIView *SGSpeedPitchPanelMake(void);
 CGFloat SGSpeedPitchPanelHeight(void);
 // What the row says beside its name, the changed speed, pitch and reverb amount, nil while all are normal.
@@ -21,8 +19,16 @@ void SGSetPlayerPitch(float semitones);
 // Whether the output could be reached to change its pitch.
 BOOL SGPlayerPitchAvailable(void);
 #define SGKeyPitchFollowsSpeed @"spotifyglass.speedPitch.follows"
+#define SGKeySpeedPitchSongs @"spotifyglass.speedPitch.songs"
+#define SGKeyFadeOnPause @"spotifyglass.speedPitch.fadeOnPause"
 BOOL SGPlayerPitchFollowsSpeed(void);
 void SGSetPlayerPitchFollowsSpeed(BOOL follows);
+BOOL SGPlayerFadeOnPause(void);
+void SGSetPlayerFadeOnPause(BOOL on);
+
+BOOL SGPlayerKeepForCurrentSong(void);
+void SGSetPlayerKeepForCurrentSong(BOOL keep);
+void SGPlayerSaveSongSpeedPitchIfKept(void);
 
 // Current downstream processing delay, in seconds. Atomic unit ownership; safe off-render.
 double SGPlayerAudioLatency(void);
