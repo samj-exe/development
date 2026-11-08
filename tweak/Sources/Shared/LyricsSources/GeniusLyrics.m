@@ -16,8 +16,7 @@ static NSString *matchFold(NSString *text) {
     return [[folded componentsSeparatedByCharactersInSet:NSCharacterSet.alphanumericCharacterSet.invertedSet] componentsJoinedByString:@""];
 }
 
-void SGGeniusLyricsAsk(SGLyricsQuery *query, void (^done)(SGLyricsResult *result));
-void SGGeniusLyricsAsk(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
+SGLyricsAsk SGGeniusLyricsAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
     if (!query.title.length) { done(nil); return; }
     NSString *q = query.artist.length ? [NSString stringWithFormat:@"%@ %@", query.title, query.artist] : query.title;
     NSURLComponents *components = [NSURLComponents componentsWithString:@"https://genius.com/api/search/multi"];
@@ -68,11 +67,15 @@ void SGGeniusLyricsAsk(SGLyricsQuery *query, void (^done)(SGLyricsResult *result
                 result.synced = NO;
                 result.wordTimed = NO;
                 result.karaokeLines = SGKaraokeStaticLines(lines);
-                SGLyricsPageLines(result.karaokeLines, &result.starts, &result.texts);
+                NSArray<NSNumber *> *starts;
+                NSArray<NSString *> *texts;
+                SGLyricsPageLines(result.karaokeLines, &starts, &texts);
+                result.starts = starts;
+                result.texts = texts;
                 result.title = query.title;
                 result.artist = query.artist;
                 done(result);
             });
         }] resume];
     }] resume];
-}
+};
