@@ -22,8 +22,11 @@ void SGSetPlayerPitch(float semitones);
 BOOL SGPlayerPitchAvailable(void);
 #define SGKeyPitchFollowsSpeed @"spotifyglass.speedPitch.follows"
 #define SGKeySpeedPitchSongs @"spotifyglass.speedPitch.songs"
+#define SGKeyFadeOnPause @"spotifyglass.speedPitch.fadeOnPause"
 BOOL SGPlayerPitchFollowsSpeed(void);
 void SGSetPlayerPitchFollowsSpeed(BOOL follows);
+BOOL SGPlayerFadeOnPause(void);
+void SGSetPlayerFadeOnPause(BOOL on);
 
 BOOL SGPlayerKeepForCurrentSong(void);
 void SGSetPlayerKeepForCurrentSong(BOOL keep);
