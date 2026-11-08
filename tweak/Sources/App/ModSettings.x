@@ -24,6 +24,7 @@
 #import "Shared/HeadGestures/HeadGestures.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/Downloads/Downloads.h"
+#import "Shared/Lossless/SLDownloadsPage.h"
 #import "Shared/ListeningStats/ListeningStats.h"
 #import "App/About/About.h"
 #import "Pages.h"
@@ -333,6 +334,7 @@ static UIViewController *modSettingsPage(void) {
         pageRow(@"Player", @"play.circle", ^UIViewController *{ return SGPlayerSettingsPage(); }),
         pageRow(@"Lyrics", @"quote.bubble", ^UIViewController *{ return SGLyricsSettingsPage(); }),
         downloads,
+        pageRow(@"Lossless & Soulseek", @"sparkles", ^UIViewController *{ return [SLDownloadsPage new]; }),
         pageRow(@"Your files", @"folder", ^UIViewController *{ return SGLocalFilesSettingsPage(); }),
         pageRow(@"Lock Screen", @"lock.iphone", ^UIViewController *{ return SGLockScreenSettingsPage(); }),
         audioEffects,

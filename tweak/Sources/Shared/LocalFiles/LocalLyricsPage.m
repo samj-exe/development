@@ -125,7 +125,7 @@ static NSString *playingLocalFile(void) {
     if (path.section != 1) return;
     _linkTo = path.row == SGLRCImportForTrack ? playingLocalFile() : nil;
     if (path.row == SGLRCImportForTrack && !_linkTo) return;
-    // .lrc is nobody's registered type, so Files offers any file and the name is checked after.
+    // .lrc and .ttml have no single registered picker type, so Files offers any file and the name is checked after.
     UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeData] asCopy:YES];
     picker.delegate = self;
     [self presentViewController:picker animated:YES completion:nil];
@@ -153,8 +153,9 @@ static NSString *playingLocalFile(void) {
 - (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSURL *url = urls.firstObject;
     if (!url) return;
-    if (![url.pathExtension.lowercaseString isEqualToString:@"lrc"]) {
-        showAlert(self, @"Not an LRC file", @"Pick a file whose name ends in .lrc.");
+    NSString *ext = url.pathExtension.lowercaseString;
+    if (![ext isEqualToString:@"lrc"] && ![ext isEqualToString:@"ttml"]) {
+        showAlert(self, @"Not a supported lyrics file", @"Pick a file whose name ends in .lrc or .ttml.");
         return;
     }
     NSError *error = nil;

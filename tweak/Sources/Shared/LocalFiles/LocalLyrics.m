@@ -34,7 +34,8 @@ static NSString *directory(void) {
 NSArray<NSString *> *SGImportedLRCFiles(void) {
     NSMutableArray<NSString *> *names = [NSMutableArray array];
     for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:directory() error:nil]) {
-        if ([name.pathExtension.lowercaseString isEqualToString:@"lrc"]) [names addObject:name];
+        NSString *ext = name.pathExtension.lowercaseString;
+        if ([ext isEqualToString:@"lrc"] || [ext isEqualToString:@"ttml"]) [names addObject:name];
     }
     return [names sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
 }
@@ -180,7 +181,22 @@ static SGLRCSheet *sheetNamed(NSString *name) {
         if (kept) return kept;
     }
     NSString *text = [NSString stringWithContentsOfFile:[directory() stringByAppendingPathComponent:name] encoding:NSUTF8StringEncoding error:nil];
-    SGLRCSheet *sheet = text ? sheetFrom(text) : nil;
+    SGLRCSheet *sheet = nil;
+    if ([name.pathExtension.lowercaseString isEqualToString:@"ttml"] && text.length) {
+        NSArray<SGKaraokeLine *> *lines = SGTTMLLines(text);
+        if (lines.count) {
+            sheet = [SGLRCSheet new];
+            sheet.lines = lines;
+            sheet.synced = YES;
+            NSArray<NSNumber *> *starts;
+            NSArray<NSString *> *texts;
+            SGLyricsPageLines(lines, &starts, &texts);
+            sheet.starts = starts;
+            sheet.texts = texts;
+        }
+    } else if (text) {
+        sheet = sheetFrom(text);
+    }
     if (!sheet) return nil;
     @synchronized (sg_sheets) { sg_sheets[name] = sheet; }
     return sheet;
@@ -336,7 +352,10 @@ NSString *SGImportLRC(NSURL *url, NSString *uri, NSError **error) {
         text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]
             ?: [[NSString alloc] initWithData:data encoding:NSUTF16StringEncoding];
         if (!text) reason = @"The file is not UTF-8 or UTF-16 text.";
-        else if (![text containsString:@"]"]) reason = @"The file has no LRC tags or timestamps.";
+        else if ([url.pathExtension.lowercaseString isEqualToString:@"lrc"] && ![text containsString:@"]"])
+            reason = @"The file has no LRC tags or timestamps.";
+        else if ([url.pathExtension.lowercaseString isEqualToString:@"ttml"] && ![text containsString:@"<tt"])
+            reason = @"The file does not contain a TTML lyrics document.";
     }
     if (reason) {
         if (error) *error = refusal(reason);

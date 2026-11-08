@@ -5,6 +5,10 @@
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
+#import "Shared/Lossless/SLSoulseek.h"
+#import "Shared/Lossless/SLDownloadToast.h"
+#import "Shared/Lossless/SLDownloadsPage.h"
+#import "Shared/Player/PlayerState.h"
 #import "Player.h"
 #import "SGRPlayerMenu.h"
 
@@ -610,6 +614,51 @@ static SGRPlayerMenuItem *lyricsSourceItem(SGRPlayerMenuTakeover *takeover) {
     return item;
 }
 
+static SGRPlayerMenuItem *downloadItem(void) {
+    SGRPlayerMenuItem *item = [SGRPlayerMenuItem itemWithTitle:@"Download" image:symbol(@"arrow.down.circle") action:^{ SLOpenDownloads(); }];
+    item.key = @"spotifyglass.playerDownload";
+    return item;
+}
+
+static SGRPlayerMenuItem *downloadLosslessItem(SGRPlayerMenuTakeover *takeover) {
+    SGRPlayerMenuItem *item = [SGRPlayerMenuItem itemWithTitle:@"Download lossless" image:symbol(@"sparkles") action:^{
+        SPTPlayerState *state = SGPlayerState();
+        NSString *title = state.track.trackTitle;
+        NSString *artist = state.track.artistName;
+        if (!title.length) return;
+        UIViewController *sheet = takeover.sheet;
+        [sheet dismissViewControllerAnimated:YES completion:^{
+            SLDownloadToast *toast = [SLDownloadToast showForTitle:title artist:artist];
+            __weak SLDownloadToast *weakToast = toast;
+            toast.operation = SLDownloadLossless(title, artist, state.duration, ^(SLDownloadPhase phase, double fraction, NSString *source) {
+                [weakToast updatePhase:phase fraction:fraction source:source];
+            }, ^(NSURL *path, NSString *error) {
+                if (!path && !error) { [weakToast dismiss]; return; }
+                if (!path) { [weakToast fail:error]; return; }
+                [weakToast complete:path];
+            });
+        }];
+    }];
+    item.key = @"spotifyglass.playerDownloadLossless";
+    return item;
+}
+
+static SGRPlayerMenuItem *editInfoItem(void) {
+    NSString *track = SGKaraokePlayingTrack();
+    SGRPlayerMenuItem *item = [SGRPlayerMenuItem itemWithTitle:@"Edit info" image:symbol(@"square.and.pencil") action:nil];
+    item.key = @"spotifyglass.playerEditInfo";
+    item.disabled = !SGLocalFileIs(track);
+    if (!item.disabled) {
+        item.action = ^{
+            UIViewController *canvas = SGLocalFileEditCanvasPage(track);
+            UIViewController *presenter = UIApplication.sharedApplication.keyWindow.rootViewController;
+            while (presenter.presentedViewController) presenter = presenter.presentedViewController;
+            [presenter presentViewController:canvas animated:YES completion:nil];
+        };
+    }
+    return item;
+}
+
 static NSArray<SGRPlayerMenuSection *> *sectionsFor(SGRPlayerMenuTakeover *t, NSArray<SGRPlayerMenuSpotifyRow *> *rows) {
     NSMutableArray<SGRPlayerMenuItem *> *tiles = [NSMutableArray array], *main = [NSMutableArray array],
                                   *feedback = [NSMutableArray array], *more = [NSMutableArray array],
@@ -639,6 +688,9 @@ static NSArray<SGRPlayerMenuSection *> *sectionsFor(SGRPlayerMenuTakeover *t, NS
     [main addObject:backgroundStyleItem(t)];
     [main addObject:lyricsBlurItem(t)];
     [main addObject:lyricsSourceItem(t)];
+    [main addObject:downloadItem()];
+    [main addObject:downloadLosslessItem(t)];
+    [main addObject:editInfoItem()];
     if (more.count == 1) {
         [feedback addObject:more.firstObject];
     } else if (more.count) {

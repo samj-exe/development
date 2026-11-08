@@ -34,6 +34,8 @@ NSDictionary<NSString *, id> *SGLocalFileEditFor(NSString *uri);
 // own) and a new cover when `cover` is set; `keepCover` NO drops the stored one. The file's own names
 // with no cover remove the edit. Returns NO with the file or image error. Main thread.
 BOOL SGLocalFileSaveEdit(NSString *uri, NSDictionary<NSString *, NSString *> *names, UIImage *cover, BOOL keepCover, NSError **error);
+// The small local-file info editor: title, artist and album only. No cover, motion or album-wide controls.
+UIViewController *SGLocalFileEditCanvasPage(NSString *uri);
 // Where the stored covers are, and the one an edit names; nil when it names none.
 NSString *SGLocalFileCoversDirectory(void);
 NSString *SGLocalFileCoverPath(NSDictionary<NSString *, id> *edit);

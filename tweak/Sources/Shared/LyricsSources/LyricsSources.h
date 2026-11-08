@@ -172,6 +172,7 @@ extern SGLyricsAsk SGLrcLibAsk;
 extern SGLyricsAsk SGSpicyLyricsAsk;
 extern SGLyricsAsk SGQQMusicAsk;
 extern SGLyricsAsk SGKuGouAsk;
+extern SGLyricsAsk SGGeniusLyricsAsk;
 
 // LrcLib.m. Timed LRC as a synced result, nil when no line in it is timed.
 SGLyricsResult *SGLyricsLRCResult(NSString *lrc);
