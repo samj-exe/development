@@ -9,6 +9,7 @@
 #import "Shared/Lossless/SLDownloadToast.h"
 #import "Shared/Lossless/SLDownloadsPage.h"
 #import "Shared/Player/PlayerState.h"
+#import "Shared/LocalFiles/LocalFiles.h"
 #import "Player.h"
 #import "SGRPlayerMenu.h"
 
@@ -634,8 +635,11 @@ static SGRPlayerMenuItem *downloadLosslessItem(SGRPlayerMenuTakeover *takeover) 
                 [weakToast updatePhase:phase fraction:fraction source:source];
             }, ^(NSURL *path, NSString *error) {
                 if (!path && !error) { [weakToast dismiss]; return; }
-                if (!path) { [weakToast fail:error]; return; }
-                [weakToast complete:path];
+                if (!path) {
+                    [weakToast finishWithTitle:title message:error ?: @"The lossless download could not be completed." failed:YES tap:nil];
+                    return;
+                }
+                [weakToast finishWithTitle:title message:@"Lossless download complete" failed:NO tap:^{ SLOpenDownloads(); }];
             });
         }];
     }];
@@ -651,9 +655,18 @@ static SGRPlayerMenuItem *editInfoItem(void) {
     if (!item.disabled) {
         item.action = ^{
             UIViewController *canvas = SGLocalFileEditCanvasPage(track);
-            UIViewController *presenter = UIApplication.sharedApplication.keyWindow.rootViewController;
+            UIViewController *presenter = nil;
+            for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+                if (![scene isKindOfClass:UIWindowScene.class] || scene.activationState != UISceneActivationStateForegroundActive) continue;
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                UIWindow *window = nil;
+                for (UIWindow *candidate in windowScene.windows) if (candidate.isKeyWindow) { window = candidate; break; }
+                window = window ?: windowScene.windows.firstObject;
+                presenter = window.rootViewController;
+                break;
+            }
             while (presenter.presentedViewController) presenter = presenter.presentedViewController;
-            [presenter presentViewController:canvas animated:YES completion:nil];
+            if (presenter) [presenter presentViewController:canvas animated:YES completion:nil];
         };
     }
     return item;
