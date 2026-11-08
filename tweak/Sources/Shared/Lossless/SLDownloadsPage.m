@@ -6,7 +6,6 @@
 #import "Shared/Player/SGLastTrack.h"
 #import "SGLosslessStore.h"
 #import "SGLossless.h"
-#import "SLLocalPlayer.h"
 #import "SLSoulseekAccountPage.h"
 #import "SLSoulseek.h"
 
@@ -23,7 +22,6 @@ static NSString *slSize(unsigned long long bytes) {
 @property (nonatomic, strong) UILabel *titleLabel, *detailLabel;
 @property (nonatomic, strong) UIButton *more;
 @property (nonatomic, copy) NSString *coverPath;
-@property (nonatomic, copy) void (^onPlay)(void);
 @property (nonatomic, copy) void (^onDelete)(void);
 @end
 
@@ -91,22 +89,20 @@ static NSString *slSize(unsigned long long bytes) {
     self.cover.image = nil;
 }
 
-- (void)configureTitle:(NSString *)title detail:(NSString *)detail playing:(BOOL)playing {
+- (void)configureTitle:(NSString *)title detail:(NSString *)detail {
     self.titleLabel.text = title;
-    self.titleLabel.textColor = playing ? SGGreen() : UIColor.whiteColor;
+    self.titleLabel.textColor = UIColor.whiteColor;
     self.detailLabel.text = detail;
     __weak SLSongCell *weak = self;
-    UIAction *play = [UIAction actionWithTitle:@"Play" image:[UIImage systemImageNamed:@"play.fill"] identifier:nil
-        handler:^(UIAction *action) { if (weak.onPlay) weak.onPlay(); }];
     UIAction *remove = [UIAction actionWithTitle:@"Delete" image:[UIImage systemImageNamed:@"trash"] identifier:nil
         handler:^(UIAction *action) { if (weak.onDelete) weak.onDelete(); }];
     remove.attributes = UIMenuElementAttributesDestructive;
-    self.more.menu = [UIMenu menuWithChildren:@[play, remove]];
+    self.more.menu = [UIMenu menuWithChildren:@[remove]];
 }
 
 @end
 
-@interface SLDownloadsPage () <SGPlayerStateObserver, UITextFieldDelegate>
+@interface SLDownloadsPage () <UITextFieldDelegate>
 @end
 
 #pragma mark - the page
@@ -116,10 +112,8 @@ static NSString *slSize(unsigned long long bytes) {
     UILabel *_total, *_count;
     UIView *_header;
     UITextField *_search;
-    UISwitch *_overwrite;
     UILabel *_searchStatus;
     NSArray<NSDictionary *> *_searchResults;
-    NSString *_playingURI;
     BOOL _scanning;
 }
 
@@ -159,24 +153,11 @@ static NSString *slSize(unsigned long long bytes) {
     _search.leftView = left;
     _search.leftViewMode = UITextFieldViewModeAlways;
 
-    UILabel *overwriteTitle = [UILabel new];
-    overwriteTitle.text = @"Overwrite Official Song";
-    overwriteTitle.textColor = UIColor.whiteColor;
-    overwriteTitle.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
-    overwriteTitle.tag = 801;
-    _overwrite = [UISwitch new];
-    _overwrite.tag = 802;
-    _overwrite.onTintColor = SGGreen();
-    _overwrite.on = [[[NSUserDefaults standardUserDefaults] objectForKey:@"spotifyglass.lossless.overwriteOfficial"] ?: @YES boolValue];
-    [_overwrite addTarget:self action:@selector(overwriteChanged:) forControlEvents:UIControlEventValueChanged];
-
     _searchStatus = [UILabel new];
     _searchStatus.textColor = SGGrey();
     _searchStatus.font = [UIFont systemFontOfSize:13];
 
     [_header addSubview:_search];
-    [_header addSubview:overwriteTitle];
-    [_header addSubview:_overwrite];
     [_header addSubview:_searchStatus];
 
     UIBarButtonItem *refresh = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
@@ -184,8 +165,6 @@ static NSString *slSize(unsigned long long bytes) {
     UIBarButtonItem *account = [[UIBarButtonItem alloc] initWithTitle:@"Soulseek" style:UIBarButtonItemStylePlain
         target:self action:@selector(openSoulseek)];
     self.navigationItem.rightBarButtonItems = @[refresh, account];
-    SGAddPlayerStateObserver(self);
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(localPlayerChanged) name:SLLocalPlayerDidChangeNotification object:nil];
     [self reloadFiles];
 }
 
@@ -194,14 +173,11 @@ static NSString *slSize(unsigned long long bytes) {
     SGInsetForBars(self.tableView);
     CGFloat width = self.tableView.bounds.size.width;
     if (fabs(_header.frame.size.width - width) > 0.5) {
-        _header.frame = CGRectMake(0, 0, width, 168);
+        _header.frame = CGRectMake(0, 0, width, 140);
         _total.frame = CGRectMake(20, 14, width - 40, 36);
         _count.frame = CGRectMake(20, 52, width - 40, 20);
         _search.frame = CGRectMake(20, 82, width - 40, 44);
-        UILabel *overwriteTitle = [_header viewWithTag:801];
-        overwriteTitle.frame = CGRectMake(20, 134, width - 90, 24);
-        _overwrite.frame = CGRectMake(width - 66, 130, 51, 31);
-        _searchStatus.frame = CGRectMake(20, 154, width - 40, 14);
+        _searchStatus.frame = CGRectMake(20, 130, width - 40, 14);
         self.tableView.tableHeaderView = _header;
     }
 }
@@ -211,20 +187,12 @@ static NSString *slSize(unsigned long long bytes) {
     [self reloadFiles];
 }
 
-- (void)localPlayerChanged {
-    if (self.isViewLoaded && self.view.window) [self.tableView reloadData];
-}
-
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 - (void)openSoulseek {
     [self.navigationController pushViewController:[SLSoulseekAccountPage new] animated:YES];
-}
-
-- (void)overwriteChanged:(UISwitch *)sender {
-    [NSUserDefaults.standardUserDefaults setBool:sender.on forKey:@"spotifyglass.lossless.overwriteOfficial"];
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
@@ -248,14 +216,6 @@ static NSString *slSize(unsigned long long bytes) {
         });
     });
     return YES;
-}
-
-// The song that plays gets a green title, as in Spotify's own lists.
-- (void)playerStateDidChange:(SPTPlayerState *)state {
-    NSString *uri = SGURIString(state.track.URI);
-    if (uri == _playingURI || [uri isEqualToString:_playingURI]) return;
-    _playingURI = uri;
-    if (self.isViewLoaded && self.view.window) [self.tableView reloadData];
 }
 
 - (void)reloadFiles {
@@ -286,8 +246,6 @@ static NSString *slSize(unsigned long long bytes) {
     _entries = entries;
     _total.text = slSize(total);
     _count.text = entries.count == 1 ? @"1 song · Lossless" : [NSString stringWithFormat:@"%lu songs · Lossless", (unsigned long)entries.count];
-    SPTPlayerState *state = SGPlayerState();
-    _playingURI = SGURIString(state.track.URI);
     [self.tableView reloadData];
     [self fillFromTags:entries];
 }
@@ -371,13 +329,10 @@ static NSString *slSize(unsigned long long bytes) {
         return cell;
     }
     SLSongCell *cell = [tableView dequeueReusableCellWithIdentifier:@"lossless-song"] ?: [[SLSongCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"lossless-song"];
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
     NSDictionary *entry = _entries[(NSUInteger)indexPath.row];
-    NSString *uri = entry[@"uri"];
-    NSString *localPath = SLLocalPlayer.shared.currentPath;
-    BOOL playing = (uri.length && [uri isEqualToString:_playingURI]) || (localPath && [localPath isEqualToString:entry[@"path"]]);
-    [cell configureTitle:entry[@"title"] detail:entry[@"detail"] playing:playing];
+    [cell configureTitle:entry[@"title"] detail:entry[@"detail"]];
     __weak SLDownloadsPage *weak = self;
-    cell.onPlay = ^{ [weak play:entry]; };
     cell.onDelete = ^{ [weak remove:entry]; };
 
     // The cover is read off the main thread; the cell shows a grey note until it is there.
@@ -399,22 +354,6 @@ static NSString *slSize(unsigned long long bytes) {
     return cell;
 }
 
-#pragma mark playing
-
-// A tap plays the download in the mod's own player (SLLocalPlayer), which Spotify's native now playing bar and
-// player show and control as if the song were theirs (SLNativeBar.x): title, artist and cover, play and pause,
-// skip, seek, and the next download once a song ends. It needs no connection and no Spotify track.
-- (void)play:(NSDictionary *)entry {
-    NSMutableArray<NSDictionary *> *queue = [NSMutableArray array];
-    NSUInteger index = 0;
-    for (NSDictionary *each in _entries) {
-        if (each == entry) index = queue.count;
-        [queue addObject:@{@"path": each[@"path"], @"title": each[@"title"], @"artist": each[@"artist"] ?: @"",
-                           @"album": each[@"album"] ?: @"", @"cover": each[@"cover"] ?: @"", @"uri": each[@"uri"] ?: @""}];
-    }
-    [SLLocalPlayer.shared playQueue:queue index:index];
-}
-
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     if (_searchResults) {
@@ -422,8 +361,8 @@ static NSString *slSize(unsigned long long bytes) {
         [self downloadResult:_searchResults[(NSUInteger)indexPath.row]];
         return;
     }
-    if (indexPath.row < (NSInteger)_entries.count) [self play:_entries[(NSUInteger)indexPath.row]];
 }
+
 
 - (void)downloadResult:(NSDictionary *)result {
     NSString *title = result[@"title"] ?: _search.text;
@@ -436,10 +375,12 @@ static NSString *slSize(unsigned long long bytes) {
         dispatch_async(dispatch_get_main_queue(), ^{
             SLDownloadsPage *strong = weak;
             if (!strong) return;
-            if (path && strong->_overwrite.on) {
+            if (path) {
                 SPTPlayerState *state = SGPlayerState();
                 NSString *uri = SGURIString(state.track.URI);
-                if (uri.length) SGLosslessStoreSetInfo(path.lastPathComponent, @{ @"uri": uri, @"title": title, @"artist": artist });
+                NSMutableDictionary *info = [NSMutableDictionary dictionaryWithDictionary:@{ @"title": title, @"artist": artist }];
+                if (uri.length) info[@"uri"] = uri;
+                SGLosslessStoreSetInfo(path.lastPathComponent, info);
             }
             strong->_searchStatus.text = path ? [NSString stringWithFormat:@"Downloaded %@", title] : (error ?: @"Download failed");
             [NSUserDefaults.standardUserDefaults setBool:YES forKey:SGKeyLossless];
