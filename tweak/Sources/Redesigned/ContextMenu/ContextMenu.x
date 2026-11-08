@@ -559,7 +559,7 @@ static void raiseHost(UIWindow *window) {
     _requestedAt = CACurrentMediaTime();
     sg_requesting = self;
     sg_requestedAt = _requestedAt;
-    // Speed and pitch's sheet test (and Edit info's) counts the ⋯'s touch, which the menu kept from Spotify's ⋯.
+    // Speed and pitch's sheet test counts the ⋯'s touch, which the menu kept from Spotify's ⋯.
     // SGPlayerMenuMarkPlayers();
     NSString *how = fireControl(self.spotify);
     SGLog(@"system menu: Spotify's sheet asked for, %.3f s after the touch down, by %@", _requestedAt - self.touchedAt, how);

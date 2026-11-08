@@ -15,7 +15,6 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
-#import "Shared/Gestures/Gestures.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/LocalFiles/LocalFiles.h"
 #import "Shared/Player/SpeedPitch.h"
@@ -156,6 +155,7 @@ static void scaleEveryCover(BOOL animated) {
 // comes back. The middle third is left alone, and a hold that starts to move is a swipe to the next track.
 // It is a speed like the menu's, so with Pitch follows speed on (until switched off) it also plays an
 // octave higher, the way a record does. The native look's copy is in Native/Player/PlayerGestures.x.
+static const double kHoldSpeed = 2;
 static char kHoldKey, kBadgeGlassKey;
 
 @interface SGRCoverHold : UILongPressGestureRecognizer
@@ -172,17 +172,16 @@ static char kHoldKey, kBadgeGlassKey;
     UIView *cover = self.view;
     if (self.state == UIGestureRecognizerStateBegan) {
         CGFloat x = [self locationInView:cover].x, third = cover.bounds.size.width / 3;
-        if (!SGGestureHoldOn() || (x > third && x < 2 * third) || !SGPlayerSpeedAllowed()) {
+        if ((x > third && x < 2 * third) || !SGPlayerSpeedAllowed()) {
             self.enabled = NO;
             self.enabled = YES;   // cancels this hold
             return;
         }
-        double speed = SGGestureHoldSpeed();
         _before = SGPlayerSpeed();
-        SGSetPlayerSpeed(speed);
+        SGSetPlayerSpeed(kHoldSpeed);
         SGPlayFeedback(SGFeedbackGrab);
         [self showBadge:YES on:cover];
-        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, [NSString stringWithFormat:@"Playing at %g times speed", speed]);
+        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @"Playing at 2 times speed");
     } else if (self.state == UIGestureRecognizerStateEnded || self.state == UIGestureRecognizerStateCancelled
                || self.state == UIGestureRecognizerStateFailed) {
         if (_before > 0) SGSetPlayerSpeed(_before);
@@ -197,22 +196,20 @@ static char kHoldKey, kBadgeGlassKey;
 - (void)showBadge:(BOOL)shown on:(UIView *)cover {
     if (shown && !_badge) {
         _badgeLabel = [UILabel new];
+        UIFont *font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+        NSTextAttachment *arrows = [NSTextAttachment textAttachmentWithImage:[[UIImage systemImageNamed:@"forward.fill"
+            withConfiguration:[UIImageSymbolConfiguration configurationWithFont:font]] imageWithTintColor:UIColor.whiteColor
+            renderingMode:UIImageRenderingModeAlwaysOriginal]];
+        NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:@"2×  "
+            attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: UIColor.whiteColor}];
+        [text appendAttributedString:[NSAttributedString attributedStringWithAttachment:arrows]];
+        _badgeLabel.attributedText = text;
         _badgeLabel.textAlignment = NSTextAlignmentCenter;
         _badge = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 92, 34)];
         _badge.userInteractionEnabled = NO;
         _badgeLabel.frame = _badge.bounds;
         _badgeLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [_badge addSubview:_badgeLabel];
-    }
-    if (shown && _badgeLabel) {
-        UIFont *font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-        NSTextAttachment *arrows = [NSTextAttachment textAttachmentWithImage:[[UIImage systemImageNamed:@"forward.fill"
-            withConfiguration:[UIImageSymbolConfiguration configurationWithFont:font]] imageWithTintColor:UIColor.whiteColor
-            renderingMode:UIImageRenderingModeAlwaysOriginal]];
-        NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:[NSString stringWithFormat:@"%g×  ", SGGestureHoldSpeed()]
-            attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: UIColor.whiteColor}];
-        [text appendAttributedString:[NSAttributedString attributedStringWithAttachment:arrows]];
-        _badgeLabel.attributedText = text;
     }
     if (!_badge) return;
     _badgeShown = shown;
@@ -301,10 +298,6 @@ static const void *kPreviewKey;
 - (void)layoutSubviews {
     %orig;
     UIView *host = (UIView *)self;
-    if (!SGFlag(SGRKeyPlayerLyricLine, NO)) {
-        SGRPlayerVanish(host);
-        return;
-    }
     CGRect bounds = host.bounds;
     if (bounds.size.width < kCoverMinWidth || bounds.size.height <= 0) return;
     SGRKaraokeView *preview = objc_getAssociatedObject(host, &kPreviewKey);

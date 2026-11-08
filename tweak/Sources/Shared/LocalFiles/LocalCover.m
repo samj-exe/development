@@ -62,8 +62,7 @@ static UIImage *fromNowPlaying(SPTPlayerTrack *track) {
 UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track) {
     NSString *uri = SGURIString(track.URI);
     NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
-    // A cover picked in Edit info comes through Spotify's own loader and wins.
-    if (!SGLocalFileIs(uri) || SGTrackArtworkCoverPath(SGTrackEditFor(uri, metadata[@"album_uri"]))) return nil;
+    if (!SGLocalFileIs(uri)) return nil;
     if (!sg_found) {
         sg_found = [NSMutableDictionary dictionary];
         sg_missed = [NSMutableDictionary dictionary];

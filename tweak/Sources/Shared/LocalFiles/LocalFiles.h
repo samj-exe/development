@@ -1,15 +1,9 @@
-// Track info edits work for Spotify catalog tracks and local files under either look. A local file's URI
-// carries its tags, spotify:local:<artist>:<album>:<title>:<seconds>, each part form encoded ("+" for a
-// space), and Spotify's core reads them from the file once, when it scans it.
+// Local-file lookup and metadata helpers used by lyrics, artwork, and playback features.
 //
-//     LocalFiles.m       local names and general per-track/per-album artwork edits, kept by the mod
-//     LocalFileInfo.x    edits applied to track metadata, artwork loading and system now playing info
-//     EditInfoMenu.x     Edit info in a song's context menu, and its editor
+//     LocalFiles.m       local names and general per-track/per-album artwork data, kept by the mod
+//     LocalFileInfo.x    track metadata, artwork loading and system now playing info
 //     LocalLyrics.h      the user's own .lrc files, linked to a local file or matched by its names
 //     LocalCover.m       the file's own cover, found where Spotify's player shows a placeholder
-//
-// Neither a local file nor a Spotify catalog entry is changed: edits are stored by URI or album URI and
-// laid over the metadata Spotify read.
 //
 // Lyrics: Spotify never asks spclient for a local file's lyrics, so the lyrics engine keeps them under
 // SGLocalFileLyricsKey and asks the sources by the names here (Shared/Lyrics/KaraokeSource.x).
@@ -60,12 +54,8 @@ NSString *SGLocalFileCoverInURL(NSString *url);
 // Posted on the main thread after an edit is stored or forgotten, object the URI.
 extern NSNotificationName const SGLocalFileEditsDidChangeNotification;
 
-// EditInfoMenu.x: the editor for a track, presented over `presenter`.
-void SGTrackPresentEditor(UIViewController *presenter, NSString *uri, NSString *albumURI, NSDictionary *metadata);
-
 // LocalCover.m: the file's own cover for a local track whose player shows Spotify's placeholder, from the
-// image fields of its metadata or the system's now playing artwork; nil for any other track, for one with a
-// cover picked in Edit info, and until one is found. Main thread.
+// image fields of its metadata or the system's now playing artwork; nil for any other track or until one is found. Main thread.
 UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track);
 
 #define SGKeyLocalFilesPage @"spotifyglass.localfiles.page"

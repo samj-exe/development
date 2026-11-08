@@ -151,9 +151,6 @@ UIViewController *SGYourFilesBrowserPage(void) {
             NSString *sub = song.album.length ? [NSString stringWithFormat:@"%@ • %@", song.artist, song.album] : song.artist;
             SGModRow *row = SGWithSymbol(SGActionRow(song.title, sub, ^{
                 UIAlertController *sheet = [UIAlertController alertControllerWithTitle:song.title message:song.filename preferredStyle:UIAlertControllerStyleActionSheet];
-                [sheet addAction:[UIAlertAction actionWithTitle:@"Edit info & cover" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-                    SGLocalFilePresentEditor(weakPage, song.uri);
-                }]];
                 if (SGFlag(SGKeyLocalFilesSuggest, YES)) {
                     [sheet addAction:[UIAlertAction actionWithTitle:@"Suggest tags & cover" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
                         suggestTagsForSong(song, weakPage);

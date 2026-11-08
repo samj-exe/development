@@ -24,8 +24,8 @@
 //
 // A pick closes the menu and then selects that row on the sheet, so what it does stays Spotify's; a pick that
 // leaves the sheet up (a row opening a page of its own) shows the sheet. Rows the mod puts in the sheet's
-// header or footer (Sort and Mix on a playlist, Edit info for a local file) are read the same way and fired the
-// same way. Closing the menu without a pick dismisses the sheet.
+// header or footer (Sort and Mix on a playlist) are read the same way and fired the same way.
+// Closing the menu without a pick dismisses the sheet.
 //
 // A page's anchor takes touches only while its menu is up, so every other tap reaches the ⋯ under it, and the
 // menu is opened with -[UIControl performPrimaryAction] (iOS 17.4), else UIContextMenuInteraction's private
