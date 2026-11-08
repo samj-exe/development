@@ -16,7 +16,7 @@ SGModSection *SGLyricsSourcesSection(BOOL namingSource) {
         NSString *first = SGLyricsProviderFor(order.firstObject).name;
         return order.count == 1 ? first : [NSString stringWithFormat:@"%@ +%lu", first, (unsigned long)order.count - 1];
     };
-    SGModRow *imported = SGPageRow(@"Imported LRC files", ^UIViewController *{ return SGImportedLRCPage(); });
+    SGModRow *imported = SGPageRow(@"Imported lyrics files", ^UIViewController *{ return SGImportedLRCPage(); });
     imported.value = ^NSString *{
         NSUInteger count = SGImportedLRCFiles().count;
         return count ? @(count).stringValue : @"None";

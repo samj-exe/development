@@ -14,7 +14,7 @@ NSString *const SGImportedLRCKey = @"importedLRC";
 NSNotificationName const SGImportedLRCDidChangeNotification = @"spotifyglass.localFiles.lrcDidChange";
 
 static NSString *const kErrorDomain = @"spotifyglass.lrc";
-static NSString *const kCredit = @"Imported LRC";
+static NSString *const kCredit = @"Imported lyrics";
 // A sheet of lyrics is a few kilobytes; anything near this is not one.
 static const NSUInteger kMostBytes = 1024 * 1024;
 

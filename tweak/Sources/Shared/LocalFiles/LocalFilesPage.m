@@ -143,7 +143,7 @@ UIViewController *SGLocalFilesSettingsPage(void) {
     SGModRow *openYourFiles = SGWithSymbol(SGPageRow(@"Open Your Files", ^UIViewController *{ return SGYourFilesBrowserPage(); }), @"folder");
     SGModRow *yourFilesToggle = SGOptionRow(@"Your Files Page", @"Dedicated page for your local songs, albums and artists", SGKeyLocalFilesPage);
     SGModRow *animatedCovers = SGOptionRow(@"Download Animated Covers", @"Keep animated covers offline for your local albums", SGKeyLocalFilesAnimatedOffline);
-    SGModRow *importedLrc = SGWithSymbol(SGPageRow(@"Imported LRC files", ^UIViewController *{ return SGImportedLRCPage(); }), @"quote.bubble");
+    SGModRow *importedLrc = SGWithSymbol(SGPageRow(@"Imported lyrics files", ^UIViewController *{ return SGImportedLRCPage(); }), @"quote.bubble");
     SGModRow *clearCovers = SGWithSymbol(SGActionRow(@"Clear Downloaded Covers and Artist Photos", nil, ^{
         [NSFileManager.defaultManager removeItemAtPath:SGLocalFileCoversDirectory() error:nil];
         UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Cleared"
@@ -155,7 +155,7 @@ UIViewController *SGLocalFilesSettingsPage(void) {
     clearCovers.color = SGRed();
 
     return [[SGModPage alloc] initWithTitle:@"Your files"
-                                      intro:@"Your own songs get a Your Files page with synced .lrc lyrics."
+                                      intro:@"Your own songs get a Your Files page with synced .lrc or .ttml lyrics."
                                    sections:@[
                                        SGSection(nil, @[openYourFiles, importedLrc]),
                                        SGNotedSection(@"Options", @[yourFilesToggle, animatedCovers, clearCovers],

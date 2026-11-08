@@ -1,5 +1,5 @@
-// Imported LRC files, on the Lyrics page beside the sources: the files kept (a swipe deletes one), Import
-// for current track…, which links the file to the local file playing, and Import LRC…, matched by title
+// Imported lyrics files, on the Lyrics page beside the sources: the files kept (a swipe deletes one), Import
+// for current track…, which links the file to the local file playing, and Import lyrics…, matched by title
 // and artist. Both open Files and copy the file in.
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "Core/SGCore.h"
@@ -33,20 +33,20 @@ static NSString *playingLocalFile(void) {
 @implementation SGImportedLRCFilesPage {
     NSArray<NSString *> *_files;
     UIView *_footer;
-    // The local file playing when Files opened for Import for current track, nil for Import LRC….
+    // The local file playing when Files opened for Import for current track, nil for Import lyrics….
     NSString *_linkTo;
 }
 
 - (instancetype)init {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
-    self.title = @"Imported LRC files";
+    self.title = @"Imported lyrics files";
     return self;
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    _footer = SGNote(@"Import for current track links the file to the local file playing, whatever its tags say. "
-                      "Import LRC… keeps a file for any track whose title and artist match its [ti:] and [ar:] tags, "
+    _footer = SGNote(@"Import for current track links an .lrc or .ttml file to the local file playing, whatever its tags say. "
+                      "Import lyrics… keeps a file for any track whose title and artist match its LRC tags or Artist - Title filename, "
                       "or its name as \"Artist - Title\". Swipe left on a file to delete it.");
     self.tableView.tableFooterView = _footer;
 }
@@ -95,7 +95,7 @@ static NSString *playingLocalFile(void) {
     if (path.section == 1) {
         UITableViewCell *cell = SGDequeueCell(table, @"import");
         if (path.row == SGLRCImportByName) {
-            SGFillCell(cell, @"Import LRC…", @"Matched by title and artist", nil, @"square.and.arrow.down");
+            SGFillCell(cell, @"Import lyrics…", @"Import .lrc or .ttml; matched by title and artist", nil, @"square.and.arrow.down");
         } else {
             NSString *uri = playingLocalFile();
             NSString *title = SGLocalFileInfo(uri)[@"title"] ?: @"The local file playing";

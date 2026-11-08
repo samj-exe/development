@@ -8,6 +8,8 @@
 #import "Shared/Lossless/SLSoulseek.h"
 #import "Shared/Lossless/SLDownloadToast.h"
 #import "Shared/Lossless/SLDownloadsPage.h"
+#import "Shared/Downloads/Downloads.h"
+#import "Shared/Downloads/DownloadsBridge.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/LocalFiles/LocalFiles.h"
 #import "Player.h"
@@ -616,7 +618,11 @@ static SGRPlayerMenuItem *lyricsSourceItem(SGRPlayerMenuTakeover *takeover) {
 }
 
 static SGRPlayerMenuItem *downloadItem(void) {
-    SGRPlayerMenuItem *item = [SGRPlayerMenuItem itemWithTitle:@"Download" image:symbol(@"arrow.down.circle") action:^{ SLOpenDownloads(); }];
+    SGRPlayerMenuItem *item = [SGRPlayerMenuItem itemWithTitle:@"Download" image:symbol(@"arrow.down.circle") action:^{
+        Class<SGDownloadsCompanion> companion = SGDownloadsCompanion();
+        if (companion) [companion downloadTrack];
+    }];
+    item.disabled = !SGDownloadsAvailable();
     item.key = @"spotifyglass.playerDownload";
     return item;
 }

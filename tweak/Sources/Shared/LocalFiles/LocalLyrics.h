@@ -1,5 +1,5 @@
-// Imported LRC files: the user's own .lrc files, for the local files no source has lyrics for (rare
-// or self-made recordings), under either look. Kept in Documents/spoti.pw/Lyrics as UTF-8, each by the
+// Imported lyrics files: the user's own .lrc or .ttml files, for the local files no source has lyrics for
+// (rare or self-made recordings), under either look. Kept in Documents/spoti.pw/Lyrics as UTF-8, each by the
 // name it came with. A file is linked to a local file's URI ("Import for current track"), and that file
 // is the track's whatever its tags say; any other track is matched against every file by title and
 // artist, folded (case, diacritics, width and everything but letters and digits ignored).
