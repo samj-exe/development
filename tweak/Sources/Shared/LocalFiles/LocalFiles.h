@@ -59,7 +59,6 @@ extern NSNotificationName const SGLocalFileEditsDidChangeNotification;
 UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track);
 
 #define SGKeyLocalFilesPage @"spotifyglass.localfiles.page"
-#define SGKeyLocalFilesSuggest @"spotifyglass.localfiles.suggest"
 #define SGKeyLocalFilesAnimatedOffline @"spotifyglass.localfiles.animatedOffline"
 
 UIViewController *SGLocalFilesSettingsPage(void);

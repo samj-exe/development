@@ -75,53 +75,6 @@ static NSArray<SGScannedLocalSong *> *scanDocumentsSongs(void) {
     return songs;
 }
 
-static void suggestTagsForSong(SGScannedLocalSong *song, UITableViewController *page) {
-    NSString *query = [NSString stringWithFormat:@"%@ %@", song.artist ?: @"", song.title ?: song.filename];
-    NSString *escaped = [query stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLQueryAllowedCharacterSet];
-    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"https://itunes.apple.com/search?media=music&entity=song&limit=1&term=%@", escaped]];
-    if (!url) return;
-    [[NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-        NSDictionary *json = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-        NSArray *results = [json isKindOfClass:NSDictionary.class] ? json[@"results"] : nil;
-        NSDictionary *first = [results isKindOfClass:NSArray.class] ? results.firstObject : nil;
-        if (![first isKindOfClass:NSDictionary.class]) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIAlertController *a = [UIAlertController alertControllerWithTitle:@"No tag match found"
-                                                                           message:@"Could not find matching metadata for this file."
-                                                                    preferredStyle:UIAlertControllerStyleAlert];
-                [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
-                [page presentViewController:a animated:YES completion:nil];
-            });
-            return;
-        }
-        NSString *sTitle = first[@"trackName"] ?: song.title;
-        NSString *sArtist = first[@"artistName"] ?: song.artist;
-        NSString *sAlbum = first[@"collectionName"] ?: song.album;
-        NSString *artURL = [first[@"artworkUrl100"] stringByReplacingOccurrencesOfString:@"100x100bb" withString:@"600x600bb"];
-        void (^applySuggestion)(UIImage *) = ^(UIImage *cover) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIAlertController *confirm = [UIAlertController alertControllerWithTitle:@"Suggested Tags"
-                                                                                 message:[NSString stringWithFormat:@"Title: %@\nArtist: %@\nAlbum: %@", sTitle, sArtist, sAlbum]
-                                                                          preferredStyle:UIAlertControllerStyleAlert];
-                [confirm addAction:[UIAlertAction actionWithTitle:@"Apply" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act) {
-                    SGLocalFileSaveEdit(song.uri, @{@"title": sTitle ?: @"", @"artist": sArtist ?: @"", @"album": sAlbum ?: @""}, cover, cover != nil);
-                    [page.tableView reloadData];
-                }]];
-                [confirm addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-                [page presentViewController:confirm animated:YES completion:nil];
-            });
-        };
-        if (artURL.length) {
-            [[NSURLSession.sharedSession dataTaskWithURL:[NSURL URLWithString:artURL] completionHandler:^(NSData *imgData, NSURLResponse *r, NSError *e) {
-                UIImage *img = imgData ? [UIImage imageWithData:imgData] : nil;
-                applySuggestion(img);
-            }] resume];
-        } else {
-            applySuggestion(nil);
-        }
-    }] resume];
-}
-
 @interface SGLocalAudioImportDelegate : NSObject <UIDocumentPickerDelegate>
 @property (nonatomic, copy) void (^imported)(void);
 @end
@@ -151,11 +104,6 @@ UIViewController *SGYourFilesBrowserPage(void) {
             NSString *sub = song.album.length ? [NSString stringWithFormat:@"%@ • %@", song.artist, song.album] : song.artist;
             SGModRow *row = SGWithSymbol(SGActionRow(song.title, sub, ^{
                 UIAlertController *sheet = [UIAlertController alertControllerWithTitle:song.title message:song.filename preferredStyle:UIAlertControllerStyleActionSheet];
-                if (SGFlag(SGKeyLocalFilesSuggest, YES)) {
-                    [sheet addAction:[UIAlertAction actionWithTitle:@"Suggest tags & cover" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-                        suggestTagsForSong(song, weakPage);
-                    }]];
-                }
                 [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
                 sheet.popoverPresentationController.sourceView = weakPage.view;
                 [weakPage presentViewController:sheet animated:YES completion:nil];
@@ -180,7 +128,7 @@ UIViewController *SGYourFilesBrowserPage(void) {
     };
 
     SGModPage *page = [[SGModPage alloc] initWithTitle:@"Your Files"
-                                                 intro:@"Tap any local song to edit its title, artist, album or cover, or automatically suggest tags."
+                                                 intro:@"Browse and import the audio files in your Spotify Documents folder."
                                               sections:@[]
                                                 footer:nil];
     weakPage = page;
@@ -194,7 +142,6 @@ UIViewController *SGYourFilesBrowserPage(void) {
 UIViewController *SGLocalFilesSettingsPage(void) {
     SGModRow *openYourFiles = SGWithSymbol(SGPageRow(@"Open Your Files", ^UIViewController *{ return SGYourFilesBrowserPage(); }), @"folder");
     SGModRow *yourFilesToggle = SGOptionRow(@"Your Files Page", @"Dedicated page for your local songs, albums and artists", SGKeyLocalFilesPage);
-    SGModRow *suggestTags = SGSwitchRow(@"Suggest Tags", @"Offer tag and cover suggestions for untagged local songs", SGKeyLocalFilesSuggest);
     SGModRow *animatedCovers = SGOptionRow(@"Download Animated Covers", @"Keep animated covers offline for your local albums", SGKeyLocalFilesAnimatedOffline);
     SGModRow *importedLrc = SGWithSymbol(SGPageRow(@"Imported LRC files", ^UIViewController *{ return SGImportedLRCPage(); }), @"quote.bubble");
     SGModRow *clearCovers = SGWithSymbol(SGActionRow(@"Clear Downloaded Covers and Artist Photos", nil, ^{
@@ -208,10 +155,10 @@ UIViewController *SGLocalFilesSettingsPage(void) {
     clearCovers.color = SGRed();
 
     return [[SGModPage alloc] initWithTitle:@"Your files"
-                                      intro:@"Your own songs get a Your Files page with suggested tags, custom covers and synced .lrc lyrics."
+                                      intro:@"Your own songs get a Your Files page with synced .lrc lyrics."
                                    sections:@[
                                        SGSection(nil, @[openYourFiles, importedLrc]),
-                                       SGNotedSection(@"Options", @[yourFilesToggle, suggestTags, animatedCovers, clearCovers],
+                                       SGNotedSection(@"Options", @[yourFilesToggle, animatedCovers, clearCovers],
                                                       @"Your Files Page needs Redesigned UI. The other settings work with either look."),
                                    ]
                                      footer:nil];
