@@ -67,3 +67,10 @@ void SGTrackPresentEditor(UIViewController *presenter, NSString *uri, NSString *
 // image fields of its metadata or the system's now playing artwork; nil for any other track, for one with a
 // cover picked in Edit info, and until one is found. Main thread.
 UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track);
+
+#define SGKeyLocalFilesPage @"spotifyglass.localfiles.page"
+#define SGKeyLocalFilesSuggest @"spotifyglass.localfiles.suggest"
+#define SGKeyLocalFilesAnimatedOffline @"spotifyglass.localfiles.animatedOffline"
+
+UIViewController *SGLocalFilesSettingsPage(void);
+UIViewController *SGYourFilesBrowserPage(void);

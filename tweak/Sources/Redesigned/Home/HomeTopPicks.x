@@ -515,7 +515,7 @@ static void paintAura(UICollectionView *list, UIColor *color) {
 static void followAlbum(UICollectionView *shelf) {
     if (!isHomeShelf(shelf)) return;
     if (SGFlag(SGRKeyHomeTopPicks, NO)) pokeCards(shelf);
-    if (!SGRHomeGlassStyle()) return;
+    if (!SGRHomeGlassStyle() || !SGEnabled(SGRKeyHomeTopPicksColor)) return;
     UICollectionView *list = pageListOf(shelf);
     if (!list) return;
     sg_homeList = list;
@@ -580,6 +580,7 @@ static void followAlbum(UICollectionView *shelf) {
 %end
 
 %ctor {
+    SGMigrateKey(@"spotifyglass.redesign.home.toppicks", SGRKeyHomeTopPicks);
     if (!SGRedesignedUI() || (!SGRHomeGlassStyle() && !SGFlag(SGRKeyHomeTopPicks, NO))) return;
     [NSNotificationCenter.defaultCenter addObserverForName:SGRNowPlayingArtworkDidChangeNotification object:nil
                                                       queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
