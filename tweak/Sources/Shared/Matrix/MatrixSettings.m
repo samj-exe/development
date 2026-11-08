@@ -8,8 +8,8 @@ static void selectFromScan(UIViewController *owner) {
         if (!displays.count) {
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No displays found" message:@"Turn on the iDotMatrix display and scan again." preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-            if (owner.presentedViewController) owner = owner.presentedViewController;
-            [owner presentViewController:alert animated:YES completion:nil];
+            UIViewController *presenter = owner.presentedViewController ?: owner;
+            [presenter presentViewController:alert animated:YES completion:nil];
             return;
         }
         UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Choose a display" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
@@ -21,8 +21,8 @@ static void selectFromScan(UIViewController *owner) {
             }]];
         }
         [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-        if (owner.presentedViewController) owner = owner.presentedViewController;
-        [owner presentViewController:sheet animated:YES completion:nil];
+        UIViewController *presenter = owner.presentedViewController ?: owner;
+        [presenter presentViewController:sheet animated:YES completion:nil];
     });
 }
 

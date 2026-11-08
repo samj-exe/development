@@ -269,11 +269,12 @@ static void MatrixBroadcastTrack(SPTPlayerTrack *track, BOOL force) {
         return;
     }
     NSURL *url = [NSURL URLWithString:urlString];
-    [[NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    NSURLSessionDataTask *task = [NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         UIImage *image = data.length ? [UIImage imageWithData:data] : MatrixStillArtwork();
         NSData *rgb = MatrixRGBFrame(image);
         dispatch_async(dispatch_get_main_queue(), ^{ if ([sg_lastMatrixTrack isEqualToString:uri] && rgb) [MatrixBluetooth() sendImageData:rgb track:uri]; });
-    }] resume;
+    }];
+    [task resume];
 }
 
 @interface SGMatrixObserver : NSObject <SGPlayerStateObserver>
