@@ -3,6 +3,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <MediaPlayer/MediaPlayer.h>
 #import <string.h>
+#import <math.h>
 #import "Core/SGCore.h"
 #import "Shared/Player/PlayerState.h"
 #import "MatrixDisplay.h"
@@ -230,28 +231,126 @@ static NSString *MatrixCoverURL(NSDictionary *metadata) {
     }
     return nil;
 }
+static double MatrixSavedDouble(NSString *key, double fallback) {
+    id value = [NSUserDefaults.standardUserDefaults objectForKey:key];
+    if (!value) return fallback;
+    double saved = [(NSNumber *)value doubleValue];
+    return isfinite(saved) ? saved : fallback;
+}
+static NSInteger MatrixSavedOrientation(void) {
+    NSInteger value = [NSUserDefaults.standardUserDefaults integerForKey:SGKeyMatrixOrientation];
+    return value == 90 || value == 180 || value == 270 ? value : 0;
+}
+static uint8_t MatrixAdjustedContrast(double component, double amount) {
+    double adjusted = fmin(255.0, fmax(0.0, (component * 255.0 - 127.5) * amount + 127.5));
+    return (uint8_t)lround(adjusted);
+}
+static void MatrixAdjustedColor(uint8_t red, uint8_t green, uint8_t blue, double saturation, double contrast, uint8_t *out) {
+    double r = red / 255.0, g = green / 255.0, b = blue / 255.0;
+    double maximum = fmax(r, fmax(g, b));
+    double minimum = fmin(r, fmin(g, b));
+    double delta = maximum - minimum;
+    if (delta <= 0) {
+        out[0] = MatrixAdjustedContrast(r, contrast);
+        out[1] = MatrixAdjustedContrast(g, contrast);
+        out[2] = MatrixAdjustedContrast(b, contrast);
+        return;
+    }
+    double hue;
+    if (maximum == r) hue = fmod((g - b) / delta, 6.0);
+    else if (maximum == g) hue = (b - r) / delta + 2.0;
+    else hue = (r - g) / delta + 4.0;
+    hue /= 6.0;
+    if (hue < 0) hue += 1.0;
+    double boostedSaturation = fmin(1.0, fmax(0.0, (delta / maximum) * saturation));
+    double chroma = maximum * boostedSaturation;
+    double remainder = fmod(hue * 6.0, 2.0);
+    double intermediate = chroma * (1.0 - fabs(remainder - 1.0));
+    double match = maximum - chroma;
+    int sector = (int)(hue * 6.0);
+    double components[3];
+    switch (sector) {
+        case 0: components[0] = chroma; components[1] = intermediate; components[2] = 0; break;
+        case 1: components[0] = intermediate; components[1] = chroma; components[2] = 0; break;
+        case 2: components[0] = 0; components[1] = chroma; components[2] = intermediate; break;
+        case 3: components[0] = 0; components[1] = intermediate; components[2] = chroma; break;
+        case 4: components[0] = intermediate; components[1] = 0; components[2] = chroma; break;
+        default: components[0] = chroma; components[1] = 0; components[2] = intermediate; break;
+    }
+    out[0] = MatrixAdjustedContrast(components[0] + match, contrast);
+    out[1] = MatrixAdjustedContrast(components[1] + match, contrast);
+    out[2] = MatrixAdjustedContrast(components[2] + match, contrast);
+}
+static CGRect MatrixSourceDrawRect(CGRect logical, NSInteger orientation) {
+    if (orientation == 90) return CGRectMake(logical.origin.y, 32.0 - logical.origin.x - logical.size.width, logical.size.height, logical.size.width);
+    if (orientation == 180) return CGRectMake(32.0 - logical.origin.x - logical.size.width, 32.0 - logical.origin.y - logical.size.height, logical.size.width, logical.size.height);
+    if (orientation == 270) return CGRectMake(32.0 - logical.origin.y - logical.size.height, logical.origin.x, logical.size.height, logical.size.width);
+    return logical;
+}
 static NSData *MatrixRGBFrame(UIImage *image) {
     if (!image.CGImage) return nil;
+    NSInteger orientation = MatrixSavedOrientation();
+    BOOL quarterTurn = orientation == 90 || orientation == 270;
+    CGFloat sourceWidth = image.size.width, sourceHeight = image.size.height;
+    if (sourceWidth < 1 || sourceHeight < 1) return nil;
+    CGFloat orientedWidth = quarterTurn ? sourceHeight : sourceWidth;
+    CGFloat orientedHeight = quarterTurn ? sourceWidth : sourceHeight;
+    CGFloat scale = MAX(32.0 / orientedWidth, 32.0 / orientedHeight);
+    CGRect logical = CGRectMake((32.0 - orientedWidth * scale) / 2.0, (32.0 - orientedHeight * scale) / 2.0,
+                                orientedWidth * scale, orientedHeight * scale);
+    CGRect drawn = MatrixSourceDrawRect(logical, orientation);
+
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
     format.scale = 1; format.opaque = YES;
-    __block UIImage *rendered = nil;
-    rendered = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(32, 32) format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
-        CGFloat iw = image.size.width, ih = image.size.height;
-        if (iw < 1 || ih < 1) return;
-        CGFloat scale = MAX(32.0 / iw, 32.0 / ih);
-        CGRect drawn = CGRectMake((32.0 - iw * scale) / 2.0, (32.0 - ih * scale) / 2.0, iw * scale, ih * scale);
+    UIImage *rendered = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(32, 32) format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        CGContextRef ctx = context.CGContext;
+        CGContextSetFillColorWithColor(ctx, UIColor.blackColor.CGColor);
+        CGContextFillRect(ctx, CGRectMake(0, 0, 32, 32));
+        CGContextSaveGState(ctx);
+        if (orientation == 90) { CGContextTranslateCTM(ctx, 32, 0); CGContextRotateCTM(ctx, M_PI_2); }
+        else if (orientation == 180) { CGContextTranslateCTM(ctx, 32, 32); CGContextRotateCTM(ctx, M_PI); }
+        else if (orientation == 270) { CGContextTranslateCTM(ctx, 0, 32); CGContextRotateCTM(ctx, -M_PI_2); }
         [image drawInRect:drawn];
+        CGContextRestoreGState(ctx);
     }];
+
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
     UInt8 pixels[32 * 32 * 4]; memset(pixels, 0, sizeof(pixels));
     CGContextRef ctx = CGBitmapContextCreate(pixels, 32, 32, 8, 32*4, space,
         kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
     if (!ctx) { CGColorSpaceRelease(space); return nil; }
+    CGContextTranslateCTM(ctx, 0, 32); CGContextScaleCTM(ctx, 1, -1);
     CGContextDrawImage(ctx, CGRectMake(0, 0, 32, 32), rendered.CGImage);
     CGContextRelease(ctx); CGColorSpaceRelease(space);
-    NSMutableData *rgb = [NSMutableData dataWithCapacity:32*32*3];
-    for (NSUInteger i = 0; i < 32*32; i++) { uint8_t value[3] = {pixels[i*4], pixels[i*4+1], pixels[i*4+2]}; [rgb appendBytes:value length:3]; }
-    return rgb;
+
+    double saturation = MatrixSavedDouble(SGKeyMatrixSaturation, 1.0);
+    double contrast = MatrixSavedDouble(SGKeyMatrixContrast, 1.0);
+    double sharpness = MatrixSavedDouble(SGKeyMatrixSharpness, 0.0);
+    BOOL mirrored = [NSUserDefaults.standardUserDefaults boolForKey:SGKeyMatrixMirrored];
+    uint8_t adjusted[32 * 32 * 3];
+    for (NSUInteger y = 0; y < 32; y++) for (NSUInteger x = 0; x < 32; x++) {
+        NSUInteger sourceX = mirrored ? 31 - x : x;
+        NSUInteger offset = (y * 32 + sourceX) * 4;
+        MatrixAdjustedColor(pixels[offset], pixels[offset + 1], pixels[offset + 2], saturation, contrast, adjusted + (y * 32 + x) * 3);
+    }
+    if (sharpness != 0) {
+        uint8_t sharpened[32 * 32 * 3]; memcpy(sharpened, adjusted, sizeof(sharpened));
+        for (NSUInteger y = 0; y < 32; y++) for (NSUInteger x = 0; x < 32; x++) for (NSUInteger channel = 0; channel < 3; channel++) {
+            NSUInteger yStart = y > 0 ? y - 1 : 0, yEnd = y < 31 ? y + 1 : 31;
+            NSUInteger xStart = x > 0 ? x - 1 : 0, xEnd = x < 31 ? x + 1 : 31;
+            NSInteger total = 0; NSUInteger count = 0;
+            for (NSUInteger ny = yStart; ny <= yEnd; ny++) for (NSUInteger nx = xStart; nx <= xEnd; nx++) {
+                if (nx == x && ny == y) continue;
+                total += adjusted[(ny * 32 + nx) * 3 + channel]; count++;
+            }
+            double original = adjusted[(y * 32 + x) * 3 + channel];
+            double average = count ? (double)total / count : original;
+            double value = original + sharpness * (original - average);
+            sharpened[(y * 32 + x) * 3 + channel] = (uint8_t)fmin(255.0, fmax(0.0, lround(value)));
+        }
+        memcpy(adjusted, sharpened, sizeof(adjusted));
+    }
+    return [NSData dataWithBytes:adjusted length:sizeof(adjusted)];
 }
 
 static NSString *sg_lastMatrixTrack;
