@@ -10,6 +10,23 @@ static SGModRow *contextRow(NSString *title, NSString *key) {
     return row;
 }
 
+// The server's own config on the two mechanisms this page drives, out of the file Premium.m keeps for a support
+// request: a crossfade that sounds like nothing while these lines say the flags are on is the difference between
+// a config the core ignores and a preference the core never reads.
+static NSString *configLines(void) {
+    NSURL *caches = [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
+    NSURL *file = [[caches URLByAppendingPathComponent:@"spoti.pw/AdBlock" isDirectory:YES] URLByAppendingPathComponent:@"live-config.txt"];
+    NSString *text = [NSString stringWithContentsOfURL:file encoding:NSUTF8StringEncoding error:nil];
+    if (!text.length) return @"No config recorded yet: Spoof Premium off, or nothing fetched this launch.";
+    NSMutableArray<NSString *> *lines = [NSMutableArray array];
+    for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
+        NSString *lower = line.lowercaseString;
+        if (![lower containsString:@"crossfade"] && ![lower containsString:@"automix"] && ![lower containsString:@"gapless"]) continue;
+        [lines addObject:line];
+    }
+    return lines.count ? [lines componentsJoinedByString:@"\n"] : @"The config says nothing about crossfade or automix.";
+}
+
 UIViewController *SGAutoMixSettingsPage(void) {
     SGModRow *enabled = SGOptionRow(@"AutoMix", @"Spotify transitions with a crossfade fallback", SGKeyAutoMix);
     enabled.changed = ^(BOOL on) { SGAutoMixSettingsChanged(); };
@@ -60,6 +77,14 @@ UIViewController *SGAutoMixSettingsPage(void) {
         [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
         [top presentViewController:alert animated:YES completion:nil];
     });
+    SGModRow *config = SGStatActionRow(@"Spotify's config", @"Crossfade and automix as the server sent them", nil, ^{
+        UIViewController *top = SGTopController();
+        if (!top || top.presentedViewController) return;
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Crossfade and automix in Spotify's config"
+            message:configLines() preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+        [top presentViewController:alert animated:YES completion:nil];
+    });
     return [[SGModPage alloc] initWithTitle:@"AutoMix"
         intro:@"Restart Spotify after enabling AutoMix, then start playback from a playlist or album. Start playback again after changing the context options."
         sections:@[
@@ -70,6 +95,6 @@ UIViewController *SGAutoMixSettingsPage(void) {
                 contextRow(@"Queued songs", SGKeyAutoMixQueue), contextRow(@"Autoplay", SGKeyAutoMixAutoplay),
             ], @"Other playback keeps Spotify's own settings. Podcasts, audiobooks, local files and ads are left alone."),
             SGSection(@"Try it", @[apply, preview]),
-            SGSection(@"Status", @[status, last, details]),
+            SGSection(@"Status", @[status, last, details, config]),
         ] footer:@"Spotify supplies beat-matched transitions for supported songs and contexts. The selected crossfade fills gaps where no transition plan is available. Bluetooth works as local playback; a separate Spotify Connect device controls its own playback capabilities."];
 }

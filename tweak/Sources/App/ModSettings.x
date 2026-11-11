@@ -29,6 +29,7 @@
 #import "Shared/ListeningStats/ListeningStats.h"
 #import "App/About/About.h"
 #import "Pages.h"
+#import "Shared/AutoMix/AutoMix.h"
 
 static const CGFloat kRowHeight = 56;
 static char kRowKey, kInsetKey;
@@ -330,6 +331,9 @@ static UIViewController *modSettingsPage(void) {
     SGModRow *webJam = pageRow(@"Web Jam", @"globe", ^UIViewController *{ return SGWebJamPage(); });
     webJam.value = ^NSString *{ return SGWebJamStatus(); };
     webJam.refreshOn = SGWebJamDidChangeNotification;
+    SGModRow *autoMix = pageRow(@"AutoMix", @"waveform.path", ^UIViewController *{ return SGAutoMixSettingsPage(); });
+    autoMix.value = ^NSString *{ return SGFlag(SGKeyAutoMix, NO) ? SGAutoMixStatus() : @"Off"; };
+    autoMix.refreshOn = SGAutoMixStatusDidChangeNotification;
     NSMutableArray<SGModRow *> *parts = [NSMutableArray arrayWithArray:@[
         pageRow(@"Appearance", @"paintpalette", ^UIViewController *{ return SGAppearanceSettingsPage(); }),
         pageRow(@"Navbar", @"dock.rectangle", ^UIViewController *{ return SGNavbarPage(); }),
@@ -341,7 +345,7 @@ static UIViewController *modSettingsPage(void) {
         pageRow(@"Lock Screen", @"lock.iphone", ^UIViewController *{ return SGLockScreenSettingsPage(); }),
         audioEffects,
         ambient,
-        pageRow(@"AutoMix", @"waveform.path", ^UIViewController *{ return SGAutoMixSettingsPage(); }),
+        autoMix,
         webJam,
         pageRow(@"Vibrations", @"iphone.radiowaves.left.and.right", ^UIViewController *{ return SGVibrationsSettingsPage(); }),
     ]];

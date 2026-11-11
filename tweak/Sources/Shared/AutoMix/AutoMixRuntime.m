@@ -236,7 +236,7 @@ NSString *SGAutoMixLastTransition(void) {
 // unit once for the whole plan: judging each value alone turns a 100 s start + 5 s overlap into
 // 100 s..1,005 s.
 static double planScale(double start, double length, double duration) {
-    if (duration > 0) return (start > duration * 10.0 || length > duration * 10.0) ? 1000.0 : 1.0;
+    if (duration > 0) return (start > duration || (length > duration && length > 12)) ? 1000.0 : 1.0;
     return (start > 3600.0 || length > 3600.0) ? 1000.0 : 1.0;
 }
 
@@ -345,18 +345,44 @@ static NSString *contextURI(id context) {
     return nil;
 }
 
+// The request side, which nothing else reports on: whether Spotify was asked for a transition on a context
+// at all, and where it could not be, why. Once per context and reason -- a play request is rebuilt often.
+static void askedOnce(NSString *uri, NSString *what) {
+    static NSMutableSet<NSString *> *logged;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ logged = [NSMutableSet set]; });
+    NSString *mark = [NSString stringWithFormat:@"%@ %@", uri.length ? uri : @"(no context)", what];
+    @synchronized (logged) {
+        if ([logged containsObject:mark]) return;
+        [logged addObject:mark];
+    }
+    SGLog(@"automix: %@", mark);
+}
+
 id SGAutoMixCopyContext(id context) {
-    if (!SGAutoMixEnabled() || ![context conformsToProtocol:@protocol(NSCopying)]
+    if (!SGAutoMixEnabled()) return context;
+    NSString *uri = contextURI(context);
+    if (![context conformsToProtocol:@protocol(NSCopying)]
         || ![context respondsToSelector:NSSelectorFromString(@"metadata")]
-        || ![context respondsToSelector:NSSelectorFromString(@"setMetadata:")]) return context;
+        || ![context respondsToSelector:NSSelectorFromString(@"setMetadata:")]) {
+        askedOnce(uri, [NSString stringWithFormat:@"cannot ask for a transition, %@ carries no context metadata",
+                        NSStringFromClass(object_getClass(context))]);
+        return context;
+    }
     @try {
-        NSString *uri = contextURI(context);
-        if (!uri.length) return context;
+        if (!uri.length) {
+            askedOnce(nil, @"cannot ask for a transition, the context has no URI");
+            return context;
+        }
         NSDictionary *patched = SGAutoMixContextMetadata(uri, get(context, @"metadata"));
         if (!patched) return context;
         id copy = [context copy];
-        if (!copy || copy == context) return context;
+        if (!copy || copy == context) {
+            askedOnce(uri, @"cannot ask for a transition, the context does not copy");
+            return context;
+        }
         ((void (*)(id, SEL, id))objc_msgSend)(copy, NSSelectorFromString(@"setMetadata:"), [patched mutableCopy]);
+        askedOnce(uri, @"asked for a transition");
         return copy;
     } @catch (NSException *exception) {
         SGLog(@"automix: context left unchanged: %@", exception.reason);
@@ -374,7 +400,11 @@ id SGAutoMixCopyRequest(id request, BOOL nested) {
         id copy = [request copy];
         if (!copy || copy == request) return request;
         id copiedOwner = nested ? get(copy, @"preparePlayRequest") : copy;
-        if (!copiedOwner || copiedOwner == owner || ![copiedOwner respondsToSelector:NSSelectorFromString(@"setContext:")]) return request;
+        if (!copiedOwner || copiedOwner == owner || ![copiedOwner respondsToSelector:NSSelectorFromString(@"setContext:")]) {
+            askedOnce(nil, [NSString stringWithFormat:@"the transition was dropped, %@ cannot carry a patched context",
+                            NSStringFromClass(object_getClass(request))]);
+            return request;
+        }
         ((void (*)(id, SEL, id))objc_msgSend)(copiedOwner, NSSelectorFromString(@"setContext:"), changed);
         return copy;
     } @catch (NSException *exception) {

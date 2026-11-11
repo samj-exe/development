@@ -78,14 +78,31 @@ NSDictionary *SGAutoMixContextMetadata(NSString *uri, NSDictionary *metadata) {
     return patched;
 }
 
+static NSDictionary<NSString *, NSNumber *> *playbackFlags(void) {
+    static NSDictionary<NSString *, NSNumber *> *flags;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        flags = @{
+            @"core-automix.automix_enabled": @YES,
+            @"core-playback-setup.crossfade_enabled": @YES,
+            @"ios-feature-settings.automix_enabled": @YES,
+            @"ios-feature-settings.crossfade_enabled": @YES,
+            @"ios-feature-settings.use_playback_settings_crossfade": @NO,
+            @"playback-settings.use_playback_settings_crossfade": @NO,
+        };
+    });
+    return flags;
+}
+
+id SGAutoMixForcedFlagValue(NSString *key) {
+    return playbackFlags()[key];
+}
+
 NSData *SGAutoMixConfiguration(NSData *configuration) {
     if (!SGAutoMixEnabled() || ![configuration isKindOfClass:NSData.class]) return configuration;
     NSMutableArray<SGPBField *> *fields = SGPBParse(configuration);
     if (!fields) return configuration;
-    NSDictionary<NSString *, NSString *> *required = @{
-        @"core-automix": @"automix_enabled",
-        @"core-playback-setup": @"crossfade_enabled",
-    };
+    NSDictionary<NSString *, NSNumber *> *required = playbackFlags();
     NSMutableSet *found = [NSMutableSet set];
     for (SGPBField *field in fields) {
         if (field.number != 3 || field.wire != 2) continue;
@@ -93,20 +110,26 @@ NSData *SGAutoMixConfiguration(NSData *configuration) {
         NSArray<SGPBField *> *identifier = SGPBParse(SGPBFirst(value, 1).payload);
         NSString *component = SGPBText(SGPBFirst(identifier, 1));
         NSString *property = SGPBText(SGPBFirst(identifier, 2));
-        if (!component || !property || ![property isEqualToString:required[component]]) continue;
-        [found addObject:component];
+        if (!component || !property) continue;
+        NSString *key = [NSString stringWithFormat:@"%@.%@", component, property];
+        NSNumber *forced = required[key];
+        if (!forced) continue;
+        [found addObject:key];
         NSIndexSet *oldValue = [value indexesOfObjectsPassingTest:^BOOL(SGPBField *entry, NSUInteger idx, BOOL *stop) {
             return entry.number >= 3 && entry.number <= 5;
         }];
         [value removeObjectsAtIndexes:oldValue];
-        [value addObject:SGPBBytes(3, SGPBSerialize(@[SGPBVarint(1, 1)]))];
+        [value addObject:SGPBBytes(3, SGPBSerialize(@[SGPBVarint(1, forced.boolValue)]))];
         field.payload = SGPBSerialize(value);
     }
-    for (NSString *component in required) {
-        if ([found containsObject:component]) continue;
-        NSData *identifier = SGPBSerialize(@[SGPBString(1, component), SGPBString(2, required[component])]);
+    for (NSString *key in [required.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
+        if ([found containsObject:key]) continue;
+        NSRange separator = [key rangeOfString:@"."];
+        NSString *component = [key substringToIndex:separator.location];
+        NSString *property = [key substringFromIndex:separator.location + 1];
+        NSData *identifier = SGPBSerialize(@[SGPBString(1, component), SGPBString(2, property)]);
         [fields addObject:SGPBBytes(3, SGPBSerialize(@[SGPBBytes(1, identifier),
-            SGPBBytes(3, SGPBSerialize(@[SGPBVarint(1, 1)]))]))];
+            SGPBBytes(3, SGPBSerialize(@[SGPBVarint(1, required[key].boolValue)]))]))];
     }
     return SGPBSerialize(fields);
 }

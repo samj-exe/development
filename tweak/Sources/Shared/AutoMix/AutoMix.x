@@ -92,7 +92,7 @@
     if (!SGAutoMixSupportedVersion(version)) return;
     if (SGAutoMixEnabled()) {
         SGFlagForcer force = ^id(NSString *key) {
-            return [@[@"ios-feature-settings.automix_enabled", @"ios-feature-settings.crossfade_enabled"] containsObject:key] ? @YES : nil;
+            return SGAutoMixForcedFlagValue(key);
         };
         SGRegisterFlagForcer(YES, force, force);
     }

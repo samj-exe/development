@@ -295,6 +295,42 @@ BOOL SGRPlayerLyricsOpen(void) {
     return sg_open;
 }
 
+// The lines stop where the controls start. The stage only reaches past them where they are away, faded with
+// the lines alone, and a player that could not be measured keeps the stage at the height it last had, which is
+// the height the controls gave up while they were gone. A mask on the stage rather than a shorter frame, so
+// nothing re-anchors the sung line.
+static const CGFloat kLinesFade = 40;
+
+static void clipStageAboveControls(SGRPlayerLyricsOverlay *overlay) {
+    UIView *stage = overlay.stage, *bar = sg_duration.viewIfLoaded;
+    CGFloat height = overlay.stage.bounds.size.height;
+    CGFloat room = height;
+    if (bar && bar.alpha > 0.01) {
+        room = CGRectGetMinY([bar convertRect:bar.bounds toView:stage]) - kLyricsBottom;
+    }
+    if (height < 1 || room >= height - 0.5) {
+        stage.layer.mask = nil;
+        return;
+    }
+    CAGradientLayer *mask = [stage.layer.mask isKindOfClass:CAGradientLayer.class] ? (CAGradientLayer *)stage.layer.mask : nil;
+    if (!mask) {
+        mask = [CAGradientLayer layer];
+        mask.colors = @[(id)UIColor.whiteColor.CGColor, (id)UIColor.whiteColor.CGColor, (id)UIColor.clearColor.CGColor];
+        mask.startPoint = CGPointMake(0.5, 0);
+        mask.endPoint = CGPointMake(0.5, 1);
+        stage.layer.mask = mask;
+    }
+    CGFloat fade = MIN(kLinesFade, MAX(0, room));
+    CGRect frame = CGRectMake(0, 0, MAX(stage.bounds.size.width, 1), height);
+    NSArray<NSNumber *> *locations = @[@0, @(MAX(0, room - fade) / height), @(MIN(1, MAX(0, room) / height))];
+    if (CGRectEqualToRect(frame, mask.frame) && [mask.locations isEqualToArray:locations]) return;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    mask.frame = frame;
+    mask.locations = locations;
+    [CATransaction commit];
+}
+
 // Puts the overlay's own views where the measurements say, without animating. The thumbnail is laid out
 // at the size and place Spotify draws its cover at and moved by its transform alone, so a pass that
 // runs while it is up leaves it exactly where the eye has it: the two are worked out from one
@@ -313,6 +349,7 @@ static void place(SGRPlayerLyricsOverlay *overlay, UIView *host, SGRLyricsLayout
     overlay.lyrics.frame = overlay.stage.bounds;
     overlay.lyrics.extrasEnabled = SGEnabled(SGRKeyPlayerTranslateButton);
     syncSingControl(overlay);
+    clipStageAboveControls(overlay);
 }
 
 // Where the thumbnail's view has to go to land on `l.thumb`, as a transform about its own center: the
@@ -741,8 +778,27 @@ void SGRPlayerToggleLyrics(void) {
 static void replace(void) {
     UIView *host = sg_host;
     if (!host || sg_moving) return;   // a pass in the middle of the transition would cut it short
+    static NSUInteger lookedAgain;
     SGRLyricsLayout l = layoutIn(host);
-    if (sg_open && !l.ok) return;
+    if (sg_open && !l.ok) {
+        // A new track rebuilds the units' views, and the pass that runs before those have laid out measures
+        // nothing: left there, the lines keep the room they last had -- the stage over the controls when they
+        // were alone, with new controls drawn back over it -- and no further pass is coming on an idle screen.
+        // Asked for again on the next turns, until the player measures.
+        static BOOL logged;
+        if (!logged) {
+            logged = YES;
+            SGLog(@"redesign player: the lyrics could not be measured again (stage %.0fx%.0f, lift %.0f)", l.stage.size.width, l.stage.size.height, l.lift);
+        }
+        if (lookedAgain++ < 20) {
+            __weak UIView *weakHost = host;
+            dispatch_async(dispatch_get_main_queue(), ^{ [weakHost setNeedsLayout]; });
+        }
+        SGRPlayerLyricsOverlay *overlay = objc_getAssociatedObject(host, &kOverlayKey);
+        if (overlay.superview) clipStageAboveControls(overlay);
+        return;
+    }
+    lookedAgain = 0;
     placeTitleRow(l);
     sg_floating.viewIfLoaded.alpha = sg_open ? 0 : 1;
     if (!sg_open) return;

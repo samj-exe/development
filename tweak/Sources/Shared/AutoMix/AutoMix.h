@@ -24,6 +24,7 @@ BOOL SGAutoMixHasTransition(NSDictionary *metadata);
 NSDictionary *SGAutoMixContextMetadata(NSString *uri, NSDictionary *metadata);
 id SGAutoMixCopyContext(id context);
 id SGAutoMixCopyRequest(id request, BOOL nested);
+id SGAutoMixForcedFlagValue(NSString *key);
 NSData *SGAutoMixConfiguration(NSData *configuration);
 
 void SGAutoMixPreferencesAvailable(id preferences);
