@@ -26,6 +26,7 @@ spotifyglass_CFLAGS += -I$(SG_SHINE)
 Sources/Shared/AudioEffects/SGDSPCrossfeed.m_CFLAGS := -isystem $(SG_AUDIO)/libbs2b
 Sources/Shared/AudioEffects/SGDSPLiveprog.m_CFLAGS := -isystem $(SG_AUDIO)/wdl/eel2
 Sources/Shared/Jam/LocalJam.x_CFLAGS := -Wno-deprecated-declarations
+$(SG_SHINE)/l3loop.c_CFLAGS := -Wno-unused-but-set-variable
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
