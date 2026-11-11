@@ -20,6 +20,7 @@
 #import "Shared/AutoMix/AutoMix.h"
 #import "Shared/LocalFiles/LocalFiles.h"
 #import "Shared/Jam/WebJam.h"
+#import "Shared/Jam/Radio.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Shared/HeadGestures/HeadGestures.h"
 #import "Shared/Haptics/Haptics.h"
@@ -41,10 +42,7 @@ static SGModRow *pageRow(NSString *title, NSString *symbol, UIViewController *(^
     return SGWithSymbol(SGPageRow(title, page), symbol);
 }
 
-// How long the wordmark takes to carry its spectrum all the way round, matching the glow switch's turn.
-static const double kRainbowSpinSeconds = 4;
-
-static UIColor *SGRainbowTextColor(CGFloat width, CGFloat height, double phase) {
+static UIColor *SGRainbowTextColor(CGFloat width, CGFloat height) {
     width = MAX(1, width);
     height = MAX(1, height);
     NSArray<UIColor *> *stops = SGGlowRainbowColors();
@@ -53,19 +51,21 @@ static UIColor *SGRainbowTextColor(CGFloat width, CGFloat height, double phase) 
     NSMutableArray *colors = [NSMutableArray arrayWithCapacity:count];
     for (UIColor *stop in stops) [colors addObject:(id)stop.CGColor];
     CGFloat *locations = malloc(sizeof(CGFloat) * count);
+    if (!locations) return UIColor.whiteColor;
     for (NSUInteger i = 0; i < count; i++) locations[i] = (CGFloat)i / (CGFloat)(count - 1);
-    CGFloat offset = (CGFloat)phase * width;
     UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(width, height)];
     UIImage *image = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
         CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+        if (!space) return;
         CGGradientRef gradient = CGGradientCreateWithColors(space, (__bridge CFArrayRef)colors, locations);
-        CGContextDrawLinearGradient(context.CGContext, gradient, CGPointMake(-offset, 0), CGPointMake(width - offset, 0), 0);
-        CGContextDrawLinearGradient(context.CGContext, gradient, CGPointMake(width - offset, 0), CGPointMake(2 * width - offset, 0), 0);
-        CGGradientRelease(gradient);
+        if (gradient) {
+            CGContextDrawLinearGradient(context.CGContext, gradient, CGPointZero, CGPointMake(width, 0), 0);
+            CGGradientRelease(gradient);
+        }
         CGColorSpaceRelease(space);
     }];
     free(locations);
-    return [UIColor colorWithPatternImage:image];
+    return image ? [UIColor colorWithPatternImage:image] : UIColor.whiteColor;
 }
 
 @interface SGTaurusSettingsPage : SGModPage <UITextFieldDelegate>
@@ -79,9 +79,6 @@ static UIColor *SGRainbowTextColor(CGFloat width, CGFloat height, double phase) 
     UILabel *_mastheadTitle, *_mastheadByline, *_compactTitle;
     UISearchTextField *_searchField;
     BOOL _compactTitleVisible;
-    CADisplayLink *_rainbowLink;
-    CFTimeInterval _rainbowLast;
-    double _rainbowPhase;
 }
 
 - (instancetype)initWithSections:(NSArray<SGModSection *> *)sections {
@@ -100,7 +97,7 @@ static UIColor *SGRainbowTextColor(CGFloat width, CGFloat height, double phase) 
     _mastheadTitle.font = [UIFont systemFontOfSize:36 weight:UIFontWeightBold];
     _mastheadTitle.textAlignment = NSTextAlignmentRight;
     [_mastheadTitle sizeToFit];
-    _mastheadTitle.textColor = SGRainbowTextColor(_mastheadTitle.bounds.size.width, _mastheadTitle.bounds.size.height, 0);
+    _mastheadTitle.textColor = SGRainbowTextColor(_mastheadTitle.bounds.size.width, _mastheadTitle.bounds.size.height);
     _mastheadByline = [UILabel new];
     _mastheadByline.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
     _mastheadByline.textColor = [UIColor colorWithWhite:1 alpha:0.72];
@@ -121,7 +118,7 @@ static UIColor *SGRainbowTextColor(CGFloat width, CGFloat height, double phase) 
     _compactTitle.text = @"taurus";
     _compactTitle.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
     [_compactTitle sizeToFit];
-    _compactTitle.textColor = SGRainbowTextColor(_compactTitle.bounds.size.width, _compactTitle.bounds.size.height, 0);
+    _compactTitle.textColor = SGRainbowTextColor(_compactTitle.bounds.size.width, _compactTitle.bounds.size.height);
     _compactTitle.alpha = 0;
     _compactTitle.isAccessibilityElement = YES;
     _compactTitle.accessibilityElementsHidden = YES;
@@ -204,45 +201,6 @@ static void collectSectionsFromPage(NSString *prefix, SGModPage *page, NSMutable
         @"by arnaupq, natasha, and samj.", @"by arnaupq, samj, and natasha.",
     ];
     _mastheadByline.text = bylines[arc4random_uniform((uint32_t)bylines.count)];
-    [self startRainbow];
-}
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    [self stopRainbow];
-}
-
-- (void)startRainbow {
-    if (_rainbowLink) return;
-    _rainbowLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(rainbowTick:)];
-    _rainbowLink.preferredFrameRateRange = CAFrameRateRangeMake(24, 30, 30);
-    [_rainbowLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-}
-
-- (void)stopRainbow {
-    [_rainbowLink invalidate];
-    _rainbowLink = nil;
-    _rainbowLast = 0;
-}
-
-- (void)rainbowTick:(CADisplayLink *)link {
-    CFTimeInterval step = _rainbowLast > 0 ? MIN(link.timestamp - _rainbowLast, 0.1) : 0;
-    _rainbowLast = link.timestamp;
-    _rainbowPhase += step / kRainbowSpinSeconds;
-    _rainbowPhase -= floor(_rainbowPhase);
-    [self applyRainbow];
-}
-
-- (void)applyRainbow {
-    CGSize compact = _compactTitle.bounds.size;
-    if (_compactTitleVisible) {
-        if (compact.width >= 1)
-            _compactTitle.textColor = SGRainbowTextColor(compact.width, compact.height, _rainbowPhase);
-        return;
-    }
-    CGSize title = _mastheadTitle.bounds.size;
-    if (title.width >= 1)
-        _mastheadTitle.textColor = SGRainbowTextColor(title.width, title.height, _rainbowPhase);
 }
 
 - (void)viewDidLayoutSubviews {
@@ -290,7 +248,10 @@ static UIViewController *miscSettingsPage(void) {
         SGWithSymbol(hideDiscord, @"bubble.left.and.bubble.right"),
     ]);
     SGModSection *devices = SGSection(@"Displays", @[SGWithSymbol(pageRow(@"iDotMatrix", @"dot.radiowaves.left.and.right", ^UIViewController *{ return SGMatrixSettingsPage(); }), @"dot.radiowaves.left.and.right")]);
-    return [[SGModPage alloc] initWithTitle:@"Misc" intro:SGRestartNote sections:@[banners, devices] footer:nil];
+    SGModSection *streaming = SGSection(@"Streaming", @[SGWithSymbol(
+        pageRow(@"ICY Radio", @"dot.radiowaves.left.and.right", ^UIViewController *{ return SGICYRadioSettingsPage(); }),
+        @"dot.radiowaves.left.and.right")]);
+    return [[SGModPage alloc] initWithTitle:@"Misc" intro:SGRestartNote sections:@[banners, devices, streaming] footer:nil];
 }
 
 static UIViewController *modSettingsPage(void) {

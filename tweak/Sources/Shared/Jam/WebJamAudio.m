@@ -1,18 +1,19 @@
 #import "WebJamAudio.h"
 #import "Shared/Audio/SGAudioPipeline.h"
 #import "Shared/Audio/SGAudioRingBuffer.h"
+#import "layer3.h"
 #import <mach/mach_time.h>
 #include <stdatomic.h>
 #include <math.h>
 #include <string.h>
 
-enum { kAudioFrames = 2048, kAudioPackets = 128, kAudioRecent = 16 };
+enum { kAudioFrames = 2048, kAudioPackets = 128, kAudioRecent = 16, kICYRecent = 128 };
 static SGAudioRingBuffer *sg_audioRing;
 static dispatch_queue_t sg_audioQueue;
 static dispatch_source_t sg_audioTimer;
 static atomic_bool sg_capture;
 static atomic_uint sg_audioEpoch = 1, sg_audioRate, sg_audioChannels, sg_audioPlanar;
-static BOOL sg_registered, sg_audioStarted, sg_wasPlaying;
+static BOOL sg_registered, sg_audioStarted, sg_webJamRequested, sg_icyRequested, sg_wasPlaying;
 static NSString *sg_audioTrack;
 static double sg_position, sg_positionAt, sg_tickSeconds;
 
@@ -24,6 +25,10 @@ static uint64_t sg_sourceFrame;
 static float sg_read[kAudioFrames * 2];
 static NSMutableData *sg_pcm;
 static NSMutableArray<NSDictionary *> *sg_segments;
+static NSMutableData *sg_icyPCM;
+static NSMutableArray<NSDictionary *> *sg_icySegments;
+static shine_t sg_encoder;
+static uint32_t sg_icySequence;
 static uint32_t sg_workerEpoch, sg_workerRate, sg_sequence;
 static uint64_t sg_expectedFrame;
 static double sg_receivedAt;
@@ -31,11 +36,43 @@ static double sg_receivedAt;
 static double monotonic(void) { return mach_absolute_time() * sg_tickSeconds; }
 
 static void clearAudio(void) {
+    if (sg_encoder) shine_close(sg_encoder);
+    sg_encoder = NULL;
     sg_pcm = [NSMutableData data];
     sg_segments = [NSMutableArray array];
+    sg_icyPCM = [NSMutableData data];
+    sg_icySegments = [NSMutableArray array];
     sg_workerRate = 0;
     sg_expectedFrame = UINT64_MAX;
     sg_receivedAt = 0;
+}
+
+static BOOL startEncoder(uint32_t rate) {
+    if (shine_check_config((int)rate, 128) < 0) return NO;
+    shine_config_t config = {0};
+    config.wave.channels = PCM_STEREO;
+    config.wave.samplerate = (int)rate;
+    shine_set_config_mpeg_defaults(&config.mpeg);
+    config.mpeg.mode = JOINT_STEREO;
+    config.mpeg.bitr = 128;
+    sg_encoder = shine_initialise(&config);
+    return sg_encoder != NULL;
+}
+
+static void encodeICY(NSData *pcm) {
+    if (!sg_encoder || !pcm.length) return;
+    [sg_icyPCM appendData:pcm];
+    NSUInteger frameBytes = (NSUInteger)shine_samples_per_pass(sg_encoder) * 4;
+    while (frameBytes && sg_icyPCM.length >= frameBytes) {
+        int written = 0;
+        unsigned char *encoded = shine_encode_buffer_interleaved(sg_encoder, sg_icyPCM.mutableBytes, &written);
+        if (encoded && written > 0) {
+            NSData *frame = [NSData dataWithBytes:encoded length:(NSUInteger)written];
+            [sg_icySegments addObject:@{@"sequence": @(++sg_icySequence), @"data": frame}];
+            if (sg_icySegments.count > kICYRecent) [sg_icySegments removeObjectAtIndex:0];
+        }
+        [sg_icyPCM replaceBytesInRange:NSMakeRange(0, frameBytes) withBytes:NULL length:0];
+    }
 }
 
 static void little16(uint8_t *p, uint16_t n) { p[0] = n; p[1] = n >> 8; }
@@ -66,6 +103,7 @@ static void drainAudio(void) {
         if (sg_workerRate != stamp.format || sg_expectedFrame != stamp.sourceFrame) {
             clearAudio();
             sg_workerRate = stamp.format;
+            startEncoder(stamp.format);
         }
         sg_expectedFrame = stamp.sourceFrame + stamp.frames;
         sg_receivedAt = monotonic();
@@ -78,6 +116,7 @@ static void drainAudio(void) {
             int16_t value = (int16_t)lrintf(fmaxf(-1, fminf(1, sample)) * 32767);
             little16(out + i * 2, (uint16_t)value);
         }
+        encodeICY([NSData dataWithBytes:out length:stamp.frames * 4]);
         NSUInteger size = (sg_workerRate / 4) * 4;
         while (size && sg_pcm.length >= size) {
             NSData *pcm = [sg_pcm subdataWithRange:NSMakeRange(0, size)];
@@ -146,6 +185,19 @@ __attribute__((constructor)) static void installAudio(void) {
 }
 
 void SGWebJamAudioStart(void) {
+    sg_webJamRequested = YES;
+    if (sg_audioStarted || !sg_registered) return;
+    sg_audioStarted = YES;
+    sg_audioTrack = nil; sg_wasPlaying = NO; sg_positionAt = 0;
+    atomic_fetch_add_explicit(&sg_audioEpoch, 1, memory_order_release);
+    sg_audioTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, sg_audioQueue);
+    dispatch_source_set_timer(sg_audioTimer, DISPATCH_TIME_NOW, 40 * NSEC_PER_MSEC, 5 * NSEC_PER_MSEC);
+    dispatch_source_set_event_handler(sg_audioTimer, ^{ drainAudio(); });
+    dispatch_resume(sg_audioTimer);
+}
+
+void SGWebJamAudioICYStart(void) {
+    sg_icyRequested = YES;
     if (sg_audioStarted || !sg_registered) return;
     sg_audioStarted = YES;
     sg_audioTrack = nil; sg_wasPlaying = NO; sg_positionAt = 0;
@@ -157,6 +209,19 @@ void SGWebJamAudioStart(void) {
 }
 
 void SGWebJamAudioStop(void) {
+    sg_webJamRequested = NO;
+    if (sg_icyRequested) return;
+    atomic_store_explicit(&sg_capture, false, memory_order_release);
+    atomic_fetch_add_explicit(&sg_audioEpoch, 1, memory_order_release);
+    sg_audioStarted = NO; sg_wasPlaying = NO; sg_audioTrack = nil;
+    if (sg_audioTimer) dispatch_source_cancel(sg_audioTimer);
+    sg_audioTimer = nil;
+    dispatch_async(sg_audioQueue, ^{ drainAudio(); clearAudio(); });
+}
+
+void SGWebJamAudioICYStop(void) {
+    sg_icyRequested = NO;
+    if (sg_webJamRequested) return;
     atomic_store_explicit(&sg_capture, false, memory_order_release);
     atomic_fetch_add_explicit(&sg_audioEpoch, 1, memory_order_release);
     sg_audioStarted = NO; sg_wasPlaying = NO; sg_audioTrack = nil;
@@ -211,4 +276,50 @@ void SGWebJamAudioNext(uint32_t epoch, uint32_t after, void (^done)(NSData *)) {
         if (current != atomic_load(&sg_audioEpoch)) { done(nil); return; }
         done(packet);
     });
+}
+
+NSData *SGWebJamAudioICYNext(uint32_t epoch, uint32_t after, uint32_t *currentEpoch, uint32_t *sequence) {
+    __block NSData *frame = nil;
+    __block uint32_t current = 0, next = after;
+    dispatch_sync(sg_audioQueue, ^{
+        current = atomic_load_explicit(&sg_audioEpoch, memory_order_acquire);
+        if (!atomic_load_explicit(&sg_capture, memory_order_acquire) || sg_workerEpoch != current ||
+            !sg_encoder || !sg_icySegments.count || monotonic() - sg_receivedAt >= 1.0) return;
+        NSDictionary *selected = nil;
+        if (epoch != current || !after) {
+            selected = sg_icySegments.lastObject;
+        } else {
+            uint32_t first = [sg_icySegments.firstObject[@"sequence"] unsignedIntValue];
+            uint32_t last = [sg_icySegments.lastObject[@"sequence"] unsignedIntValue];
+            if (after < first - 1) selected = sg_icySegments.firstObject;
+            else if (after < last) {
+                for (NSDictionary *candidate in sg_icySegments) {
+                    if ([candidate[@"sequence"] unsignedIntValue] > after) {
+                        selected = candidate;
+                        break;
+                    }
+                }
+            }
+        }
+        if (selected) {
+            frame = selected[@"data"];
+            next = [selected[@"sequence"] unsignedIntValue];
+        }
+    });
+    if (currentEpoch) *currentEpoch = current;
+    if (sequence) *sequence = next;
+    return frame;
+}
+
+NSDictionary *SGWebJamAudioICYStatus(void) {
+    __block NSDictionary *status;
+    dispatch_sync(sg_audioQueue, ^{
+        uint32_t epoch = atomic_load_explicit(&sg_audioEpoch, memory_order_acquire);
+        BOOL ready = atomic_load_explicit(&sg_capture, memory_order_acquire) && sg_workerEpoch == epoch &&
+            sg_encoder && sg_icySegments.count > 0 && monotonic() - sg_receivedAt < 1.0;
+        uint32_t rate = atomic_load(&sg_audioRate);
+        status = @{@"supported": @(sg_registered && (!rate || shine_check_config((int)rate, 128) >= 0)),
+            @"ready": @(ready), @"epoch": @(epoch), @"sampleRate": @(atomic_load(&sg_audioRate))};
+    });
+    return status;
 }

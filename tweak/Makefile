@@ -19,7 +19,10 @@ spotifyglass_RESOURCE_DIRS := Resources
 spotifyglass_LOGOS_DEFAULT_GENERATOR := internal
 
 SG_AUDIO := ../vendor/audio
+SG_SHINE := ../vendor/audio/shine/src/lib
 spotifyglass_OBJ_FILES := $(SG_AUDIO)/build/ios/libsgaudio.a
+spotifyglass_FILES += $(wildcard $(SG_SHINE)/*.c)
+spotifyglass_CFLAGS += -I$(SG_SHINE)
 Sources/Shared/AudioEffects/SGDSPCrossfeed.m_CFLAGS := -isystem $(SG_AUDIO)/libbs2b
 Sources/Shared/AudioEffects/SGDSPLiveprog.m_CFLAGS := -isystem $(SG_AUDIO)/wdl/eel2
 Sources/Shared/Jam/LocalJam.x_CFLAGS := -Wno-deprecated-declarations

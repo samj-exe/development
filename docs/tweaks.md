@@ -30,7 +30,8 @@
     plist/                      Info.plist overrides merged into the app (turns UIDesignRequiresCompatibility off)
     vendor/                     AutoFLEX deb; audio/, the third-party C of the audio effects (libbs2b, WDL's EEL2) and
                                 the EEL2 parser of the mod's own, built by its own Makefile into a static library the
-                                tweak links (its README names the upstream commits and the licenses)
+                                tweak links (audio README names the upstream commits and licenses); shine/, the pinned
+                                LGPL-2 MP3 encoder for ICY Radio
     ipa/, out/                  decrypted Spotify IPA in, built IPAs out (both gitignored)
 
 `tweak/Sources/Shared/Flags/SGFlagList.m` is generated from the IPA and gitignored, as are the
@@ -502,6 +503,57 @@ concurrent slots and a four-second timeout. Unresolved names retain their fallba
 The browser assets live in `Shared/Jam/Web/`; `scripts/generate-webjam.py` embeds them into
 `WebJamWeb.m` before each build. No browser framework or font CDN is required.
 See [WEB-JAM-LIVE-2026-11-06.md](WEB-JAM-LIVE-2026-11-06.md) for build evidence and device checks.
+
+## ICY Radio
+
+Misc → Streaming → ICY Radio runs an MP3 radio listener on the iPhone's Wi-Fi address at port
+8788, independently of Web Jam's port 8787. Enable it, then use Copy stream URL to add
+`http://<iphone-wi-fi-ip>:8788/stream` to Music Assistant as a local radio stream. The stream
+advertises ICY metadata to compatible clients and sends the current Spotify title and URI every
+16,000 audio bytes. Audio is captured from Spotify's local output, so Spotify must be playing on
+the iPhone; Connect playback on another device is not captured. The stream itself is unauthenticated
+for radio-client compatibility and should only be used on a trusted Wi-Fi network.
+
+Copy Home Assistant token provides a bearer token for the local JSON API. It is persistent until
+Spotify's app data is cleared. Keep it private: it allows playback control. Requests go to
+`http://<iphone-wi-fi-ip>:8788/api/control` with `Authorization: Bearer <token>` and
+`Content-Type: application/json`. Supported bodies are `{"action":"play"}`,
+`{"action":"pause"}`, `{"action":"toggle"}`, `{"action":"next"}`,
+`{"action":"previous"}`, and `{"action":"seek","position":42}` (position in seconds).
+The authenticated `GET /api/state` endpoint returns current title, artist, album, Spotify URI,
+artwork, duration, position, playback speed, and playing/paused state. This is a REST control API,
+not a native Home Assistant media-player entity.
+
+For example, define these commands in Home Assistant's `configuration.yaml`, replacing the phone
+address and token with the values for this listener:
+
+```yaml
+rest_command:
+  spotify_radio_play:
+    url: "http://192.168.1.42:8788/api/control"
+    method: POST
+    headers:
+      Authorization: "Bearer REPLACE_WITH_COPIED_TOKEN"
+      Content-Type: "application/json"
+    payload: '{"action":"play"}'
+  spotify_radio_pause:
+    url: "http://192.168.1.42:8788/api/control"
+    method: POST
+    headers:
+      Authorization: "Bearer REPLACE_WITH_COPIED_TOKEN"
+      Content-Type: "application/json"
+    payload: '{"action":"pause"}'
+  spotify_radio_next:
+    url: "http://192.168.1.42:8788/api/control"
+    method: POST
+    headers:
+      Authorization: "Bearer REPLACE_WITH_COPIED_TOKEN"
+      Content-Type: "application/json"
+    payload: '{"action":"next"}'
+```
+
+HA and the iPhone must be able to reach each other on the same local network. The iPhone's Wi-Fi
+address can change; copy the current stream URL again after reconnecting if needed.
 
 ## Adding a feature
 
